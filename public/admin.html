@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10263d">
+  <title>KPOPIFY | Admin</title>
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/admin.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/admin.html" aria-label="KPOPIFY Admin home">
+        <span class="brand-mark">♡</span>
+        <span><strong>KPOPIFY</strong><small>ADMIN STUDIO</small></span>
+      </a>
+      <a class="store-link" href="/">View storefront <span aria-hidden="true">↗</span></a>
+    </header>
+    <main>
+      <section class="welcome">
+        <div>
+          <p class="eyebrow">YOUR STORE, YOUR RULES</p>
+          <h1>Admin <span>Studio.</span></h1>
+          <p class="welcome-copy">Manage albums and PPULBATU treasures in one place.</p>
+        </div>
+        <div class="welcome-badge" aria-hidden="true">K♡</div>
+      </section>
+      <section class="stats" aria-label="Store summary">
+        <article class="stat-card"><span class="stat-icon">▦</span><div><p>Total products</p><strong id="totalProducts">—</strong></div></article>
+        <article class="stat-card"><span class="stat-icon pink-icon">♡</span><div><p>Bestsellers</p><strong id="totalBestsellers">—</strong></div></article>
+        <article class="stat-card"><span class="stat-icon blue-icon">↗</span><div><p>Total stock</p><strong id="totalStock">—</strong></div></article>
+      </section
+      <section class="content-grid">
+        <section class="card form-card" id="formPanel">
+          <div class="section-heading">
+            <div><p class="eyebrow">PRODUCT DETAILS</p><h2 id="formTitle">Add a product</h2></div>
+            <span class="heading-heart">♡</span>
+          </div>
+          <p class="muted">Fields marked with * are required. Your changes save to the existing product database.</p>
+          <form id="productForm" enctype="multipart/form-data">
+            <label>Product name *<input name="name" required maxlength="200" placeholder="e.g. The Name Chapter: FREEFALL"></label>
+            <label>Group / artist *<input name="group_name" required maxlength="100" placeholder="e.g. TXT"></label>
+            <div class="two-columns">
+              <label>Store category *
+                <select name="category" required>
+                  <option value="TXT">Albums</option>
+                  <option value="Tubatu">PPULBATU</option>
+                </select>
+              </label>
+              <label>Price (₹) *<input name="price" type="number" required min="0.01" step="0.01" placeholder="2000"></label>
+            </div>
+            <label>Stock quantity *<input name="stock" type="number" required min="0" step="1" value="1"></label>
+            <label>Description<textarea name="description" rows="4" maxlength="1000" placeholder="Write a short product description…"></textarea></label>
+            <label class="file-label">Product image <span class="optional">(optional · max 5 MB)</span>
+              <input name="image" id="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+              <span class="file-note">Choose a JPG, PNG, WEBP, or GIF image. When editing, leave this empty to keep the current image.</span>
+            </label>
+            <label class="checkbox-row"><input name="is_bestseller" type="checkbox" value="true"><span><strong>Feature as a bestseller</strong><small>Show this item as one of your featured products.</small></span></label>
+            <div class="form-actions">
+              <button class="button primary-button" type="submit" id="submitButton">＋ Add product</button>
+              <button class="button secondary-button hidden" type="button" id="cancelButton">Cancel edit</button>
+            </div>
+            <p id="status" class="status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <section class="card inventory-card">
+          <div class="inventory-heading">
+            <div><p class="eyebrow">YOUR CATALOGUE</p><h2>Products</h2></div>
+            <span id="productCountBadge" class="count-badge">0 items</span>
+          </div>
+          <div class="toolbar">
+            <label class="search-box"><span aria-hidden="true">⌕</span><input id="productSearch" type="search" placeholder="Search products…" aria-label="Search products"></label>
+            <select id="categoryFilter" aria-label="Filter by category">
+              <option value="All">All categories</option>
+              <option value="Albums">Albums</option>
+              <option value="PPULBATU">PPULBATU</option>
+            </select>
+          </div>
+          <div id="productsList" class="products-list" aria-live="polite"><div class="empty-state">Loading your products…</div></div>
+        </section>
+      </section>
+      <footer>Made with <span>♡</span> for KPOPIFY · Admin tools</footer>
+    </main>
+  </div>
+</body>
+</html>
