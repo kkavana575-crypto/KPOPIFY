@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Product Details | KPOPIFY</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #fff7fa;
+            color: #512d40;
+        }
+
+        header {
+            background: #f28bb5;
+            padding: 18px 24px;
+            color: white;
+        }
+
+        header a {
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 22px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin: 24px 6%;
+            color: #c34c83;
+            text-decoration: none;
+        }
+
+        .product-container {
+            max-width: 950px;
+            margin: 10px auto 50px;
+            padding: 28px;
+            background: white;
+            border-radius: 22px;
+            box-shadow: 0 5px 25px #e9b6cc40;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 35px;
+        }
+
+        .product-image {
+            width: 100%;
+            height: 380px;
+            object-fit: contain;
+            background: #fff0f6;
+            border-radius: 16px;
+        }
+
+        .product-info {
+            align-self: center;
+        }
+
+        .product-group {
+            color: #d66b9c;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            font-size: 28px;
+            line-height: 1.35;
+        }
+
+        .price {
+            font-size: 25px;
+            font-weight: bold;
+        }
+
+        .description {
+            line-height: 1.7;
+            color: #795c6c;
+        }
+
+        .stock {
+            margin: 20px 0;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 30px;
+            background: #f28bb5;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background: #c7b8bf;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 15px;
+            color: #b33e75;
+        }
+
+        @media (max-width: 650px) {
+            .product-container {
+                grid-template-columns: 1fr;
+                margin: 10px 14px 30px;
+                padding: 18px;
+                gap: 20px;
+            }
+
+            .product-image {
+                height: 280px;
+            }
+
+            h1 {
+                font-size: 23px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <a href="/index.html">♡ KPOPIFY</a>
+    </header>
+
+    <a class="back-link" href="/index.html">← Back to store</a>
+
+    <main class="product-container">
+        <div>
+            <img id="productImage" class="product-image"
+                 alt="Product image">
+        </div>
+
+        <section class="product-info">
+            <p id="productGroup" class="product-group"></p>
+
+            <h1 id="productName">Loading product...</h1>
+
+            <p id="productPrice" class="price"></p>
+
+            <p id="productDescription" class="description"></p>
+
+            <p id="productStock" class="stock"></p>
+
+            <button id="addToCartButton" disabled>
+                Loading... ♡
+            </button>
+
+            <p id="statusMessage" class="status" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <script src="/js/product.js"></script>
+</body>
+</html>
