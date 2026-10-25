@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track Your Order | KPOPIFY</title>
+    <link rel="stylesheet" href="/css/style.css">
+
+    <style>
+    * {
+        box-sizing: border-box;
+    }
+
+    :root {
+        --navy: #10263f;
+        --navy-light: #203b54;
+        --blue: #b9dce9;
+        --blue-light: #eaf5f9;
+        --pink: #f28bb5;
+        --pink-light: #fff0f6;
+        --muted: #657788;
+        --border: #d5e5ec;
+        --white: #ffffff;
+        --page: #f5f9fb;
+    }
+
+    body {
+        margin: 0;
+        background: var(--page);
+        color: var(--navy);
+        font-family: Arial, sans-serif;
+    }
+
+    /* Header */
+
+    .tracking-header {
+        padding: 20px 6%;
+        background: var(--blue);
+        border-bottom: 1px solid rgba(16, 38, 63, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .tracking-logo {
+        color: var(--navy);
+        text-decoration: none;
+        font-size: 27px;
+        font-weight: 800;
+        letter-spacing: -1px;
+    }
+
+    .tracking-logo span {
+        color: var(--pink);
+    }
+
+    .header-link {
+        color: var(--navy);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: bold;
+    }
+
+    .header-link:hover,
+    .back-link:hover {
+        color: #c94f83;
+    }
+
+    /* Main container */
+
+    .tracking-container {
+        width: min(900px, 100%);
+        margin: 38px auto;
+        padding: 0 20px 45px;
+    }
+
+    .back-link {
+        display: inline-block;
+        margin-bottom: 20px;
+        color: var(--navy);
+        text-decoration: none;
+        font-size: 14px;
+    }
+
+    /* Main tracking card */
+
+    .tracking-card {
+        overflow: hidden;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: var(--white);
+        box-shadow: 0 12px 32px rgba(16, 38, 63, 0.08);
+    }
+
+    /* Order summary banner */
+
+    .card-banner {
+        position: relative;
+        padding: 34px;
+        background: linear-gradient(125deg, #eaf5f9, #b9dce9);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .banner-top {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .package-icon {
+        width: 76px;
+        height: 76px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--navy);
+        color: var(--white);
+        font-size: 34px;
+        box-shadow: 0 6px 15px rgba(16, 38, 63, 0.18);
+    }
+
+    .banner-copy {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .banner-copy h1 {
+        margin: 0 0 8px;
+        color: var(--navy);
+        font-size: clamp(23px, 4vw, 31px);
+        line-height: 1.2;
+    }
+
+    .banner-copy p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+    }
+
+    .order-badge {
+        display: inline-block;
+        max-width: 100%;
+        margin-top: 12px;
+        padding: 8px 12px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.8);
+        color: var(--navy);
+        font-size: 13px;
+        font-weight: bold;
+        overflow-wrap: anywhere;
+    }
+
+    .status-pill {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 7px 12px;
+        border-radius: 20px;
+        background: var(--pink-light);
+        color: var(--navy);
+        border: 1px solid #f8c5d9;
+        font-size: 12px;
+        font-weight: bold;
+    }
+
+    /* Card content */
+
+    .card-content {
+        padding: 32px 34px;
+    }
+
+    .tracking-section-title {
+        margin: 0 0 26px;
+        font-size: 24px;
+        color: var(--navy);
+    }
+
+    /* Delivery timeline */
+
+    .timeline {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin: 0 0 34px;
+    }
+
+    .timeline-step {
+        position: relative;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .timeline-step:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        z-index: 0;
+        top: 21px;
+        left: calc(50% + 24px);
+        width: calc(100% - 48px);
+        height: 4px;
+        border-radius: 5px;
+        background: #e0e7ec;
+    }
+
+    .timeline-step.completed:not(:last-child)::after {
+        background: var(--navy);
+    }
+
+    .timeline-icon {
+        position: relative;
+        z-index: 1;
+        width: 44px;
+        height: 44px;
+        margin: 0 auto 12px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: #e3e9ed;
+        color: #8393a0;
+        border: 3px solid #e3e9ed;
+        font-size: 18px;
+        font-weight: bold;
+    }
+
+    /* Completed steps */
+
+    .timeline-step.completed .timeline-icon {
+        background: var(--navy);
+        color: var(--white);
+        border-color: var(--navy);
+        box-shadow: 0 3px 10px rgba(16, 38, 63, 0.18);
+    }
+
+    /* Current step */
+
+    .timeline-step.current .timeline-icon {
+        background: var(--pink);
+        color: var(--navy);
+        border: 3px solid var(--pink);
+        box-shadow: 0 0 0 5px rgba(242, 139, 181, 0.18);
+    }
+
+    .timeline-label {
+        display: block;
+        padding: 0 3px;
+        color: var(--navy);
+        font-size: 13px;
+        font-weight: bold;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+    }
+
+    .timeline-step.pending .timeline-label {
+        color: #99a7b2;
+    }
+
+    .timeline-caption {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    /* Order details */
+
+    .section-divider {
+        border: 0;
+        border-top: 1px solid var(--border);
+        margin: 28px 0;
+    }
+
+    .order-details-heading {
+        margin: 0 0 15px;
+        color: var(--navy);
+        font-size: 20px;
+    }
+
+    .order-meta {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 26px;
+    }
+
+    .meta-box {
+        min-width: 0;
+        padding: 15px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #f8fbfd;
+    }
+
+    .meta-label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .meta-value {
+        color: var(--navy);
+        font-size: 14px;
+        font-weight: bold;
+        overflow-wrap: anywhere;
+    }
+
+    .order-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px 0;
+        border-bottom: 1px solid #e7edf1;
+        color: var(--navy);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .item-name {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .item-price {
+        flex-shrink: 0;
+        font-weight: bold;
+    }
+
+    .order-total {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 20px;
+        color: var(--navy);
+        font-size: 20px;
+        font-weight: bold;
+    }
+
+    /* Action buttons */
+
+    .tracking-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+    }
+
+    .action-button {
+        flex: 1;
+        min-width: 150px;
+        padding: 13px 16px;
+        border: 1px solid var(--navy);
+        border-radius: 10px;
+        background: var(--white);
+        color: var(--navy);
+        text-align: center;
+        text-decoration: none;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+
+    .action-button.primary {
+        background: var(--navy);
+        color: var(--white);
+    }
+
+    .action-button:hover {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: var(--navy);
+    }
+
+    /* Order lookup form */
+
+    .lookup-card {
+        padding: 30px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--white);
+        box-shadow: 0 12px 32px rgba(16, 38, 63, 0.08);
+    }
+
+    .lookup-card h1 {
+        margin: 0 0 10px;
+        color: var(--navy);
+        font-size: 30px;
+    }
+
+    .lookup-subtitle {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+    }
+
+    .tracking-form {
+        margin-top: 22px;
+    }
+
+    .tracking-form label {
+        display: block;
+        margin: 17px 0 8px;
+        color: var(--navy);
+        font-size: 13px;
+        font-weight: bold;
+    }
+
+    .tracking-form input {
+        width: 100%;
+        padding: 14px;
+        border: 1px solid #bdc9d3;
+        border-radius: 9px;
+        background: #fbfdfe;
+        color: var(--navy);
+        font-family: inherit;
+        font-size: 15px;
+    }
+
+    .tracking-form input:focus {
+        outline: 2px solid var(--pink);
+        border-color: var(--pink);
+    }
+
+    .track-button {
+        width: 100%;
+        margin-top: 22px;
+        padding: 15px;
+        border: 1px solid var(--navy);
+        border-radius: 10px;
+        background: var(--navy);
+        color: var(--white);
+        font-family: inherit;
+        font-size: 15px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.2s, color 0.2s;
+    }
+
+    .track-button:hover {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: var(--navy);
+    }
+
+    .track-button:disabled {
+        cursor: wait;
+        opacity: 0.65;
+    }
+
+    .tracking-message {
+        margin-top: 18px;
+        color: #b42318;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+    }
+
+    .demo-note {
+        margin-top: 20px;
+        padding: 14px;
+        border-radius: 10px;
+        background: var(--blue-light);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.7;
+    }
+
+    .footer-note {
+        padding: 20px;
+        background: var(--blue);
+        color: var(--navy);
+        text-align: center;
+        font-size: 12px;
+    }
+
+    [hidden] {
+        display: none !important;
+    }
+
+    /* Mobile layout */
+
+    @media (max-width: 600px) {
+        .tracking-header {
+            padding: 17px 5%;
+        }
+
+        .tracking-logo {
+            font-size: 23px;
+        }
+
+        .header-link {
+            font-size: 12px;
+        }
+
+        .tracking-container {
+            margin-top: 24px;
+            padding: 0 14px 30px;
+        }
+
+        .card-banner {
+            padding: 24px 18px;
+        }
+
+        .banner-top {
+            align-items: flex-start;
+            gap: 13px;
+        }
+
+        .package-icon {
+            width: 54px;
+            height: 54px;
+            font-size: 27px;
+        }
+
+        .card-content {
+            padding: 25px 16px;
+        }
+
+        .lookup-card {
+            padding: 23px 18px;
+        }
+
+        .lookup-card h1 {
+            font-size: 26px;
+        }
+
+        .tracking-section-title {
+            font-size: 21px;
+        }
+
+        .timeline-step:not(:last-child)::after {
+            top: 17px;
+            left: calc(50% + 19px);
+            width: calc(100% - 38px);
+        }
+
+        .timeline-icon {
+            width: 38px;
+            height: 38px;
+            margin-bottom: 9px;
+            font-size: 15px;
+        }
+
+        .timeline-label {
+            font-size: 11px;
+        }
+
+        .timeline-caption {
+            font-size: 10px;
+        }
+
+        .order-meta {
+            gap: 9px;
+        }
+
+        .meta-box {
+            padding: 12px;
+        }
+
+        .tracking-actions {
+            flex-direction: column;
+        }
+
+        .action-button {
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 360px) {
+        .timeline-label {
+            font-size: 10px;
+        }
+
+        .timeline-caption {
+            font-size: 9px;
+        }
+
+        .timeline-icon {
+            width: 34px;
+            height: 34px;
+        }
+
+        .timeline-step:not(:last-child)::after {
+            top: 15px;
+            left: calc(50% + 17px);
+            width: calc(100% - 34px);
+        }
+    }
+</style>
+</head>
+
+<body>
+    <header class="tracking-header">
+        <a href="/index.html" class="tracking-logo">KPOPIFY<span>♡</span></a>
+        <a href="/index.html" class="header-link">Continue shopping ↗</a>
+    </header>
+
+    <main class="tracking-container">
+        <a href="/index.html" class="back-link">← Back to KPOPIFY</a>
+
+        <section class="lookup-card" id="lookup-card">
+            <h1>Track Your Order ♡</h1>
+            <p class="lookup-subtitle">
+                Waiting for your K-pop goodies? 🎀 Enter your order ID and
+                the mobile number used at checkout to view your order status.
+            </p>
+
+            <form id="tracking-form" class="tracking-form">
+                <label for="order-id">Order ID</label>
+                <input
+                    id="order-id"
+                    name="orderId"
+                    placeholder="e.g. KPF-A1B2C3D4E5"
+                    autocomplete="off"
+                    required
+                >
+
+                <label for="order-phone">Mobile Number</label>
+                <input
+                    id="order-phone"
+                    name="phone"
+                    type="tel"
+                    inputmode="numeric"
+                    pattern="[0-9]{10}"
+                    maxlength="10"
+                    placeholder="Enter your 10-digit mobile number"
+                    autocomplete="tel"
+                    required
+                >
+
+                <button type="submit" class="track-button">
+                    Track My Order ♡
+                </button>
+            </form>
+
+            <p id="tracking-message" class="tracking-message" role="status" aria-live="polite"></p>
+
+            <div class="demo-note">
+                💗 KPOPIFY order tracking checks the order status saved in our
+                store database. Live courier location is not available.
+            </div>
+        </section>
+
+        <section class="tracking-card" id="tracking-result" aria-live="polite" hidden>
+            <div class="card-banner">
+                <div class="banner-top">
+                    <div class="package-icon" aria-hidden="true">📦</div>
+
+                    <div class="banner-copy">
+                        <h1 id="result-title">Your order</h1>
+                        <p id="result-subtitle">Your K-pop goodies ♡</p>
+                        <span class="order-badge" id="result-order-number"></span>
+                        <br>
+                        <span class="status-pill" id="result-status"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-content">
+                <h2 class="tracking-section-title">Delivery progress</h2>
+
+                <div class="timeline" id="tracking-timeline"></div>
+
+                <hr class="section-divider">
+
+                <h2 class="order-details-heading">Order details</h2>
+                <div class="order-meta">
+                    <div class="meta-box">
+                        <span class="meta-label">Customer</span>
+                        <span class="meta-value" id="result-customer"></span>
+                    </div>
+
+                    <div class="meta-box">
+                        <span class="meta-label">Order placed</span>
+                        <span class="meta-value" id="result-date"></span>
+                    </div>
+                </div>
+
+                <h3 class="order-details-heading">Your items ♡</h3>
+                <div id="result-items"></div>
+
+                <div class="order-total">
+                    <span>Total</span>
+                    <span id="result-total"></span>
+                </div>
+
+                <div class="tracking-actions">
+                    <button type="button" class="action-button primary" id="track-another">
+                        Track Another Order
+                    </button>
+                    <a href="/index.html" class="action-button">
+                        Continue Shopping ♡
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer-note">
+        Made with love for MOA · KPOPIFY ♡
+    </footer>
+
+    <script src="/js/track-order.js"></script>
+</body>
+</html>
