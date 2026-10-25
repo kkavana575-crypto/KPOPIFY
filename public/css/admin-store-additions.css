@@ -1,0 +1,9 @@
+/* Optional storefront search/filter styling.
+   Paste at the end of public/css/style.css, or link this file from index.html. */
+.store-filters{max-width:1200px;margin:24px auto;padding:0 20px;display:grid;gap:10px;color:var(--storm-navy,#10263d)}
+.store-search-label{font-weight:700}
+.store-search{width:100%;max-width:560px;padding:13px 15px;border:1px solid #8ea9b8;border-radius:10px;background:#f8f7f2;color:#10263d;font:inherit}
+.store-category-filters{display:flex;gap:8px;flex-wrap:wrap}
+.store-filter{border:1px solid #8ea9b8;border-radius:999px;padding:9px 16px;background:transparent;color:#10263d;font-weight:700;cursor:pointer}
+.store-filter.active,.store-filter:hover{background:#10263d;color:#fff}
+.in-cart-note{margin-top:8px;font-size:14px}
