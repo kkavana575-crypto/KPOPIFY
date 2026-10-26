@@ -5,6 +5,7 @@ const db = require("./src/database/database");
 const productsRouter = require("./src/routes/products");
 const chatRouter = require("./src/routes/chat");
 const ordersRouter = require("./src/routes/orders");
+const firebaseTestRouter = require("./src/database/firebase-test");
 console.log("CHAT ROUTER LOADED:", typeof chatRouter);
 
 const app = express();
