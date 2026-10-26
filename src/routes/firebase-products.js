@@ -1,4 +1,4 @@
-```javascript
+
 const express = require("express");
 const router = express.Router();
 const firebaseDb = require("../database/firebase");
@@ -248,4 +248,4 @@ router.delete("/:id", async (req, res) => {
 });
 
 module.exports = router;
-```
+
