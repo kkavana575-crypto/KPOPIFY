@@ -1,4 +1,3 @@
-
 const productImage = document.getElementById("productImage");
 const productGroup = document.getElementById("productGroup");
 const productName = document.getElementById("productName");
@@ -8,163 +7,294 @@ const productStock = document.getElementById("productStock");
 const addToCartButton = document.getElementById("addToCartButton");
 const statusMessage = document.getElementById("statusMessage");
 
-const productId = new URLSearchParams(window.location.search).get("id");
-
 let currentProduct = null;
 
-function showError(message) {
-    productName.textContent = "Product unavailable";
-    productDescription.textContent = message;
-    productPrice.textContent = "";
-    productGroup.textContent = "";
-    productStock.textContent = "";
-    productImage.removeAttribute("src");
-    addToCartButton.disabled = true;
-    addToCartButton.textContent = "Unavailable";
-}
-
+// Get the existing shopping cart.
 function getCart() {
     try {
-        const savedCart = JSON.parse(
-            localStorage.getItem("kpopifyCart") || "[]"
-        );
-
-        return Array.isArray(savedCart) ? savedCart : [];
+        const cart = JSON.parse(localStorage.getItem("kpopifyCart") || "[]");
+        return Array.isArray(cart) ? cart : [];
     } catch {
         return [];
     }
 }
 
+// Save the shopping cart.
 function saveCart(cart) {
     localStorage.setItem("kpopifyCart", JSON.stringify(cart));
 }
 
+// Compare product IDs safely, including Firebase string IDs.
+function sameProductId(firstId, secondId) {
+    return String(firstId) === String(secondId);
+}
+
+// Display category names consistently.
+function getCategoryLabel(category) {
+    const categories = {
+        TXT: "Albums",
+        Tubatu: "PPULBATU",
+        Albums: "Albums",
+        PPULBATU: "PPULBATU",
+        Member: "Members",
+        Members: "Members"
+    };
+
+    return categories[category] || category || "Albums";
+}
+
+// Create the quantity selector and Buy Now button.
+function setupShoppingControls() {
+    if (!addToCartButton || document.getElementById("quantitySelect")) {
+        return;
+    }
+
+    const label = document.createElement("label");
+    label.htmlFor = "quantitySelect";
+    label.textContent = "Quantity";
+    label.style.cssText =
+        "display:block;margin:20px 0 8px;font-weight:600;";
+
+    const select = document.createElement("select");
+    select.id = "quantitySelect";
+    select.style.cssText =
+        "width:100%;padding:13px;border:1px solid #b8c8d8;border-radius:12px;background:white;color:#10263f;font-size:16px;margin-bottom:16px;";
+
+    addToCartButton.insertAdjacentElement("beforebegin", label);
+    label.insertAdjacentElement("afterend", select);
+
+    addToCartButton.style.cssText =
+        "width:100%;padding:15px;margin-bottom:12px;border:0;border-radius:30px;background:#10263f;color:white;font-size:16px;font-weight:bold;cursor:pointer;";
+
+    let buyNowButton = document.getElementById("buyNowButton");
+
+    if (!buyNowButton) {
+        buyNowButton = document.createElement("button");
+        buyNowButton.id = "buyNowButton";
+        buyNowButton.type = "button";
+        buyNowButton.textContent = "Buy Now ♡";
+        buyNowButton.style.cssText =
+            "width:100%;padding:15px;border:2px solid #f28bb5;border-radius:30px;background:#f28bb5;color:#10263f;font-size:16px;font-weight:bold;cursor:pointer;";
+
+        addToCartButton.insertAdjacentElement("afterend", buyNowButton);
+
+        buyNowButton.addEventListener("click", () => {
+            addSelectedQuantityToCart(true);
+        });
+    }
+}
+
+// Update quantity options according to available stock.
+function updateQuantityOptions() {
+    const select = document.getElementById("quantitySelect");
+
+    if (!select || !currentProduct) return;
+
+    select.innerHTML = "";
+
+    const stock = Math.max(0, Number(currentProduct.stock) || 0);
+
+    if (stock === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Out of stock";
+        select.appendChild(option);
+        select.disabled = true;
+        return;
+    }
+
+    for (let quantity = 1; quantity <= Math.min(stock, 10); quantity++) {
+        const option = document.createElement("option");
+        option.value = quantity;
+        option.textContent = `Quantity: ${quantity}`;
+        select.appendChild(option);
+    }
+
+    select.disabled = false;
+}
+
+// Load product details from Firebase.
 async function loadProduct() {
+    const productId = new URLSearchParams(window.location.search).get("id");
+
     if (!productId) {
-        showError("No product ID was provided.");
+        productName.textContent = "Invalid product";
+        addToCartButton.style.display = "none";
         return;
     }
 
     try {
-        // Load products from Firebase.
+        // Read products from the Firebase-backed API.
         const response = await fetch("/api/firebase-products");
-
-        if (!response.ok) {
-            throw new Error("The server could not load the products.");
-        }
-
         const data = await response.json();
 
-        if (!data.success || !Array.isArray(data.products)) {
-            throw new Error("The product list could not be loaded.");
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || "Unable to load products.");
         }
 
-        // Firebase product IDs are strings, so compare them as strings.
-        currentProduct = data.products.find(
-            product => String(product.id) === String(productId)
+        currentProduct = (data.products || []).find(
+            product => sameProductId(product.id, productId)
         );
 
         if (!currentProduct) {
-            showError("This product could not be found in the catalogue.");
+            productName.textContent = "Product not found ♡";
+
+            if (productDescription) {
+                productDescription.textContent =
+                    "This product may no longer be available.";
+            }
+
+            addToCartButton.style.display = "none";
             return;
         }
 
-        // Display the selected product.
+        // Display product information.
+        document.title = `${currentProduct.name} | KPOPIFY`;
+
         productName.textContent = currentProduct.name || "Untitled product";
-        productGroup.textContent = currentProduct.group_name || "K-pop merchandise";
+
+        if (productGroup) {
+            const groupName = currentProduct.group_name || "K-pop";
+            const category = getCategoryLabel(currentProduct.category);
+
+            productGroup.textContent = `${groupName} · ${category}`;
+        }
 
         productPrice.textContent =
-            "₹" + Number(currentProduct.price || 0).toLocaleString("en-IN");
+            `₹${Number(currentProduct.price || 0).toLocaleString("en-IN")}`;
 
         productDescription.textContent =
-            currentProduct.description || "A special item for your collection. ♡";
+            currentProduct.description ||
+            "A special item for your collection. ♡";
 
         const stock = Math.max(0, Number(currentProduct.stock) || 0);
 
         productStock.textContent = stock > 0
-            ? `${stock} available`
+            ? `${stock} in stock 💗`
             : "Currently sold out";
 
-        if (currentProduct.image) {
-            productImage.src = currentProduct.image;
-            productImage.alt = currentProduct.name || "Product image";
-            productImage.onerror = () => {
+        // Display the product image.
+        if (productImage) {
+            if (currentProduct.image) {
+                productImage.src = currentProduct.image;
+                productImage.alt = currentProduct.name || "Product image";
+                productImage.style.visibility = "visible";
+
+                productImage.onerror = () => {
+                    productImage.style.visibility = "hidden";
+                };
+            } else {
                 productImage.removeAttribute("src");
-                productImage.alt = "Product image unavailable";
-            };
-        } else {
-            productImage.removeAttribute("src");
-            productImage.alt = "No product image available";
+                productImage.style.visibility = "hidden";
+            }
         }
 
-        addToCartButton.disabled = stock <= 0;
-        addToCartButton.textContent = stock > 0
+        setupShoppingControls();
+        updateQuantityOptions();
+
+        const available = stock > 0;
+
+        addToCartButton.disabled = !available;
+        addToCartButton.textContent = available
             ? "Add to Cart ♡"
             : "Sold Out";
 
+        addToCartButton.style.opacity = available ? "1" : "0.6";
+
+        const buyNowButton = document.getElementById("buyNowButton");
+
+        if (buyNowButton) {
+            buyNowButton.disabled = !available;
+            buyNowButton.style.opacity = available ? "1" : "0.6";
+        }
+
+        if (statusMessage) {
+            statusMessage.textContent = "";
+        }
+
     } catch (error) {
         console.error("Product details error:", error);
-        showError("Could not load this product. Please try again later.");
+
+        productName.textContent = "Couldn't load this product.";
+
+        if (statusMessage) {
+            statusMessage.textContent =
+                "Please refresh the page and try again.";
+        }
+
+        addToCartButton.style.display = "none";
     }
 }
 
-addToCartButton.addEventListener("click", () => {
-    if (!currentProduct) return;
+// Add the selected quantity to the cart.
+function addSelectedQuantityToCart(buyNow = false) {
+    if (!currentProduct || Number(currentProduct.stock) <= 0) {
+        return;
+    }
 
-    const stock = Math.max(0, Number(currentProduct.stock) || 0);
+    const select = document.getElementById("quantitySelect");
+    const quantity = Number(select?.value || 1);
 
-    if (stock <= 0) {
-        statusMessage.textContent = "Sorry, this item is sold out.";
+    if (!Number.isInteger(quantity) || quantity < 1) {
         return;
     }
 
     const cart = getCart();
 
-    // Compare IDs as strings to support Firebase IDs.
     const existingItem = cart.find(
-        item => String(item.id) === String(currentProduct.id)
+        item => sameProductId(item.id, currentProduct.id)
     );
 
-    if (existingItem) {
-        if (Number(existingItem.quantity) >= stock) {
+    const existingQuantity = existingItem
+        ? Number(existingItem.quantity) || 0
+        : 0;
+
+    if (existingQuantity + quantity > Number(currentProduct.stock)) {
+        if (statusMessage) {
             statusMessage.textContent =
-                `Only ${stock} item(s) are available.`;
-            return;
+                `Only ${currentProduct.stock} unit(s) are available in total.`;
         }
 
-        existingItem.quantity = (Number(existingItem.quantity) || 0) + 1;
+        return;
+    }
+
+    if (existingItem) {
+        existingItem.quantity = existingQuantity + quantity;
+        existingItem.stock = Number(currentProduct.stock);
+        existingItem.price = Number(currentProduct.price);
+        existingItem.name = currentProduct.name;
+        existingItem.image = currentProduct.image || "";
     } else {
         cart.push({
             id: currentProduct.id,
             name: currentProduct.name,
-            price: Number(currentProduct.price) || 0,
+            price: Number(currentProduct.price),
             image: currentProduct.image || "",
-            stock: stock,
-            quantity: 1
+            stock: Number(currentProduct.stock),
+            quantity
         });
     }
 
     saveCart(cart);
 
-    statusMessage.textContent = "Added to your cart successfully! ♡";
-    addToCartButton.textContent = "Added to Cart ♡";
-
-    // Update the navigation cart count if it exists.
-    const cartCount = document.getElementById("cartCount");
-
-    if (cartCount) {
-        cartCount.textContent = cart.reduce(
-            (sum, item) => sum + (Number(item.quantity) || 0),
-            0
-        );
+    if (buyNow) {
+        sessionStorage.setItem("kpopifyOpenCart", "yes");
+        window.location.href = "/index.html";
+        return;
     }
 
-    // Restore the button label after a short delay.
-    setTimeout(() => {
-        if (currentProduct && Number(currentProduct.stock) > 0) {
-            addToCartButton.textContent = "Add to Cart ♡";
-        }
-    }, 1500);
-});
+    if (statusMessage) {
+        statusMessage.textContent =
+            `${quantity} item(s) added to your cart successfully! 💗`;
+    }
+}
 
+// Add to Cart button.
+if (addToCartButton) {
+    addToCartButton.addEventListener("click", () => {
+        addSelectedQuantityToCart(false);
+    });
+}
+
+// Start loading the product.
 loadProduct();
