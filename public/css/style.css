@@ -258,3 +258,223 @@ section{width:100%}
 /* KPOPIFY CHATBOT */
  #kpopify-chat{position:fixed!important;right:24px!important;bottom:24px!important;z-index:99999!important;font-family:Arial,sans-serif} #kpopify-chat #chat-toggle{box-sizing:border-box!important;width:60px!important;height:60px!important;min-width:60px!important;padding:0!important;margin:0!important;border:0!important;border-radius:50%!important;background:#f47eae!important;color:#fff!important;font-size:27px!important;line-height:1!important;display:flex!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;box-shadow:0 5px 18px rgba(244,126,174,.4)!important;transition:transform .2s ease} #kpopify-chat #chat-toggle:hover{transform:scale(1.06)} #kpopify-chat #chat-window{position:absolute!important;right:0!important;bottom:76px!important;width:330px!important;height:440px!important;max-height:75vh!important;margin:0!important;padding:0!important;box-sizing:border-box!important;background:#fff!important;border:1px solid #f5c5d8!important;border-radius:18px!important;box-shadow:0 8px 30px rgba(0,0,0,.18)!important;overflow:hidden!important;flex-direction:column!important} #kpopify-chat #chat-window.chat-hidden{display:none!important} #kpopify-chat #chat-window:not(.chat-hidden){display:flex!important} #kpopify-chat .chat-header{flex-shrink:0;background:#f28bb5;color:#fff;padding:15px;display:flex;align-items:center;justify-content:space-between} #kpopify-chat .chat-header small{display:block;margin-top:5px} #kpopify-chat #chat-close{background:transparent;border:0;color:#fff;font-size:20px;cursor:pointer} #kpopify-chat #chat-messages{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px} #kpopify-chat .bot-message,#kpopify-chat .user-message{padding:10px 12px;border-radius:13px;max-width:85%;font-size:14px;line-height:1.5;overflow-wrap:anywhere} #kpopify-chat .bot-message{align-self:flex-start;background:#fff0f6;color:#492438} #kpopify-chat .user-message{align-self:flex-end;background:#f28bb5;color:#fff} #kpopify-chat #chat-form{flex-shrink:0;display:flex;align-items:center;gap:8px;padding:10px;border-top:1px solid #f5dce7} #kpopify-chat #chat-input{box-sizing:border-box;min-width:0;flex:1;padding:10px;border:1px solid #efc3d5;border-radius:20px;outline:none} #kpopify-chat #chat-form button{flex-shrink:0;border:0;background:#f28bb5;color:#fff;border-radius:50%;width:40px;height:40px;cursor:pointer;font-size:18px} @media(max-width:400px){#kpopify-chat{right:12px!important;bottom:12px!important}#kpopify-chat #chat-window{width:calc(100vw - 24px)!important;max-height:70vh!important}}
  .view-cart-button{display:inline-flex;align-items:center;justify-content:center;padding:12px 24px;min-width:140px;border:2px solid #10263f;border-radius:25px;background:#10263f;color:#fff;font-size:15px;font-weight:600;cursor:pointer;transition:background .2s ease,color .2s ease}.view-cart-button:hover{background:#f28bb5;border-color:#f28bb5;color:#10263f}
+
+
+
+/* KPOPIFY — Improved mobile responsiveness */
+@media (max-width: 650px) {
+
+  /* Header */
+  .navbar {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 10px 3%;
+  }
+
+  .logo {
+    font-size: clamp(18px, 5vw, 26px);
+    letter-spacing: 1px;
+  }
+
+  .cart-button {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+
+  /* Hero banner */
+  .hero {
+    min-height: auto;
+    padding: 36px 6%;
+    margin-top: 12px;
+    align-items: center;
+  }
+
+  .hero-content {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .hero-eyebrow {
+    font-size: 10px;
+    letter-spacing: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .hero h1 {
+    font-size: clamp(36px, 9vw, 50px);
+    line-height: 1.05;
+  }
+
+  .hero-description,
+  .hero-content > p:not(.hero-eyebrow) {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .hero-buttons {
+    gap: 10px;
+  }
+
+  .primary-button,
+  .secondary-button {
+    min-height: 44px;
+    padding: 12px 15px;
+    font-size: 10px;
+  }
+
+  /* Make the hero image visible without overpowering text */
+  .hero-image {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .hero-image img {
+    object-fit: cover;
+    object-position: center;
+  }
+
+  /* Feature strip */
+  .feature-strip {
+    width: 94%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .feature-item {
+    padding: 12px 4px;
+    font-size: 9px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  /* Search and filters */
+  .store-filters {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .store-search-wrap,
+  .store-search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .store-category-filters {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .store-filter {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  /* Product cards */
+  .product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .product-image,
+  .image-placeholder {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
+  }
+
+  .product-info {
+    padding: 10px;
+  }
+
+  .product-info h3 {
+    font-size: 15px;
+    overflow-wrap: anywhere;
+  }
+
+  .product-bottom {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .product-price {
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .add-button {
+    width: 100%;
+    padding: 10px 6px;
+  }
+
+  /* PPULBATU section */
+  .ppulbatu-banner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ppulbatu-content {
+    padding: 25px 18px;
+  }
+
+  .ppulbatu-art {
+    min-height: 170px;
+  }
+
+  /* Product detail popup */
+  .product-detail-modal {
+    padding: 12px;
+  }
+
+  .product-detail-panel {
+    width: 100%;
+    max-height: 88dvh;
+    overflow-y: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .product-detail-image {
+    width: 100%;
+    height: 230px;
+    min-height: 0;
+    object-fit: contain;
+  }
+
+  .product-detail-copy {
+    padding: 22px 18px;
+  }
+
+  /* Prevent accidental horizontal overflow */
+  body {
+    overflow-x: clip;
+  }
+}
+
+/* Extra-small phones */
+@media (max-width: 370px) {
+  .hero {
+    padding: 28px 5%;
+  }
+
+  .hero h1 {
+    font-size: 35px;
+  }
+
+  .hero-buttons {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hero-buttons a {
+    width: 100%;
+  }
+
+  .feature-item {
+    font-size: 8px;
+  }
+
+  .product-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
