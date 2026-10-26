@@ -83,7 +83,7 @@ function renderProducts() {
   }
  
   productsList.innerHTML = filtered.map(product => {
-    const id = Number(product.id);
+    const id = String(product.id);
     const category = categoryLabel(product.category);
     const image = String(product.image || "").trim();
     const imageMarkup = image
