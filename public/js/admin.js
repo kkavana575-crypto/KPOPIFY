@@ -116,7 +116,7 @@ function renderProducts() {
 async function refreshProducts() {
   productsList.innerHTML = '<div class="empty-state">Loading your products…</div>';
   try {
-    const response = await fetch("/api/products");
+    const response = await fetch("/api/firebase-products");
     const data = await readResponse(response);
     products = Array.isArray(data.products) ? data.products : [];
     renderProducts();
