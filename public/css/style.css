@@ -516,3 +516,42 @@ section{width:100%}
     pointer-events: none;
   }
 }
+@media screen and (max-width: 650px) {
+  section.hero#home {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: start !important;
+    gap: 22px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 28px 6% !important;
+  }
+
+  section.hero#home > .hero-content {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  section.hero#home > .hero-image {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: 180px !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    z-index: 1 !important;
+  }
+
+  section.hero#home > .hero-image img {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    opacity: 1 !important;
+  }
+}
