@@ -11,74 +11,77 @@ const cartItems = document.getElementById("cartItems");
 const cartFooter = document.getElementById("cartFooter");
 
 let products = [];
-let activeCategory = 'All';
-let searchTerm = '';
-
+let activeCategory = "All";
+let searchTerm = "";
 let cart = [];
 
 try {
     cart = JSON.parse(localStorage.getItem("kpopifyCart") || "[]");
-
-    if (!Array.isArray(cart)) {
-        cart = [];
-    }
-} catch (error) {
+    if (!Array.isArray(cart)) cart = [];
+} catch {
     cart = [];
 }
 
-// Save cart in the browser
 function saveCart() {
     localStorage.setItem("kpopifyCart", JSON.stringify(cart));
 }
 
-// Load products from the backend
+function sameId(a, b) {
+    return String(a) === String(b);
+}
+
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+// Load products from Firebase
 async function loadProducts() {
     try {
-        const response = await fetch("/api/products");
-
-        if (!response.ok) {
-            throw new Error("Could not load products.");
-        }
-
+        const response = await fetch("/api/firebase-products");
         const data = await response.json();
 
-        if (!data.success) {
-            throw new Error("Could not load albums.");
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || "Could not load products.");
         }
 
-        products = data.products;
+        products = Array.isArray(data.products) ? data.products : [];
 
-        // Refresh saved cart information using current product data
-        cart = cart
-            .map(item => {
-                const product = products.find(p => Number(p.id) === Number(item.id));
+        // Refresh saved cart items using the current Firebase product data
+        cart = cart.map(item => {
+            const product = products.find(p => sameId(p.id, item.id));
 
-                if (!product) return null;
+            if (!product) return null;
 
-                return {
-                    id: product.id,
-                    name: product.name,
-                    price: Number(product.price),
-                    image: product.image,
-                    stock: product.stock,
-                    quantity: Math.min(
-                        Math.max(1, Number(item.quantity) || 1),
-                        product.stock
-                    )
-                };
-            })
-            .filter(item => item && item.stock > 0);
+            const stock = Math.max(0, Number(product.stock) || 0);
+            if (stock < 1) return null;
+
+            return {
+                id: product.id,
+                name: product.name,
+                price: Number(product.price) || 0,
+                image: product.image || "",
+                stock,
+                quantity: Math.min(
+                    Math.max(1, Number(item.quantity) || 1),
+                    stock
+                )
+            };
+        }).filter(Boolean);
 
         saveCart();
 
         if (albumCount) {
-            albumCount.textContent = `${products.length} albums`;
+            albumCount.textContent = `${products.length} products`;
         }
 
-        
         ensureStoreFilters();
         renderStore();
-
         renderCart();
 
     } catch (error) {
@@ -88,12 +91,10 @@ async function loadProducts() {
 
         if (productGrid) {
             productGrid.innerHTML =
-                "<p>Albums couldn't load. Please check your server.</p>";
+                "<p>Products couldn't load. Please check the Firebase products API.</p>";
         }
     }
 }
-
-// Add search and category filters automatically before the main album grid
 
 function ensureStoreFilters() {
     if (!productGrid || document.getElementById("storeFilters")) return;
@@ -130,23 +131,23 @@ function ensureStoreFilters() {
 
         <div class="store-category-filters" aria-label="Filter products">
             <button type="button" class="store-filter active" data-category="All">All Products</button>
-<button type="button" class="store-filter" data-category="Albums">Albums</button>
-<button type="button" class="store-filter" data-category="PPULBATU">PPULBATU</button>
+            <button type="button" class="store-filter" data-category="Albums">Albums</button>
+            <button type="button" class="store-filter" data-category="PPULBATU">PPULBATU</button>
+            <button type="button" class="store-filter" data-category="Members">Members</button>
         </div>
     `;
 
-    // Insert search controls before the collection heading.
     const collectionSection = productGrid.closest(".albums-section");
 
     if (collectionSection) {
-        const sectionHeading = collectionSection.querySelector(".section-heading");
+        const heading = collectionSection.querySelector(".section-heading");
 
-        if (sectionHeading) {
-            collectionSection.insertBefore(filters, sectionHeading);
+        if (heading) {
+            collectionSection.insertBefore(filters, heading);
         } else {
             collectionSection.insertBefore(filters, productGrid);
         }
-    } else {
+    } else if (productGrid.parentNode) {
         productGrid.parentNode.insertBefore(filters, productGrid);
     }
 
@@ -181,15 +182,23 @@ function ensureStoreFilters() {
     });
 }
 
+function normalizeCategory(value) {
+    const category = String(value || "Albums").trim().toLowerCase();
+
+    if (["albums", "txt"].includes(category)) return "Albums";
+    if (["ppulbatu", "tubatu"].includes(category)) return "PPULBATU";
+    if (["members", "member"].includes(category)) return "Members";
+
+    return category;
+}
 
 function renderStore() {
     const filtered = products.filter(product => {
-        const category = String(product.category || "Albums").trim();
+        const category = normalizeCategory(product.category);
 
-        // Match the saved category exactly, ignoring letter case.
         const matchesCategory =
             activeCategory === "All" ||
-            category.toLowerCase() === activeCategory.toLowerCase();
+            category === activeCategory;
 
         const searchable = `
             ${product.name || ""}
@@ -205,130 +214,128 @@ function renderStore() {
 
     if (bestsellerGrid) {
         const bestsellers = products.filter(
-            product => Number(product.is_bestseller) === 1
+            product =>
+                Number(product.is_bestseller) === 1 ||
+                product.is_bestseller === true
         );
 
         renderProducts(bestsellerGrid, bestsellers);
     }
 }
 
-// Display album cards with a simple Add to Cart button
-function renderProducts(container, albumList) {
+function renderProducts(container, productList) {
     if (!container) return;
 
-    if (albumList.length === 0) {
-        container.innerHTML = "<p>No albums available yet. ♡</p>";
+    if (!productList.length) {
+        container.innerHTML = "<p>No products available yet. ♡</p>";
         return;
     }
 
-    container.innerHTML = albumList.map(product => {
-        const inCart = cart.find(item => Number(item.id) === Number(product.id));
+    container.innerHTML = productList.map(product => {
+        const inCart = cart.find(item => sameId(item.id, product.id));
+        const id = escapeHTML(product.id);
+        const name = escapeHTML(product.name || "Untitled product");
+        const group = escapeHTML(product.group_name || "TXT");
+        const category = normalizeCategory(product.category);
+        const price = Number(product.price) || 0;
+        const stock = Math.max(0, Number(product.stock) || 0);
+        const imageURL = String(product.image || "").trim();
 
-        const image = product.image
+        const image = imageURL
             ? `<img class="product-image"
-                    src="${product.image}"
-                    alt="${product.name}"
+                    src="${escapeHTML(imageURL)}"
+                    alt="${name}"
                     onerror="this.outerHTML='<div class=&quot;image-placeholder&quot;>♡</div>'">`
             : '<div class="image-placeholder">♡</div>';
 
+        const actionButton = inCart
+            ? `<button type="button" class="view-cart-button" data-view-cart>View Cart ♡</button>`
+            : `<button
+                    type="button"
+                    class="add-button"
+                    data-add="${id}"
+                    ${stock <= 0 ? "disabled" : ""}
+                >${stock <= 0 ? "Sold Out" : "Add to Cart ♡"}</button>`;
+
         return `
-            <article class="product-card" data-product-page="${product.id}" style="cursor:pointer;">
+            <article class="product-card" data-product-page="${id}" style="cursor:pointer;">
                 ${image}
+
                 <div class="product-info">
-                    <p class="product-group">${product.group_name || "TXT"}</p>
-                    <h3>${product.name}</h3>
+                    <p class="product-group">${group}</p>
+                    <h3>${name}</h3>
 
                     <div class="product-bottom">
-                        <span class="product-price">₹${Number(product.price).toLocaleString("en-IN")}</span>
+                        <span class="product-price">₹${price.toLocaleString("en-IN")}</span>
                     </div>
 
                     <div class="product-card-actions">
-    ${
-        inCart
-        ? `
-            <div class="product-card-actions">
-    ${
-        inCart
-        ? `
-            <button
-                type="button"
-                class="view-cart-button"
-                data-view-cart
-            >
-                View Cart ♡
-            </button>
-          `
-        : `
-            <button
-                type="button"
-                class="add-button"
-                data-add="${product.id}"
-                ${product.stock <= 0 ? "disabled" : ""}
-            >
-                ${product.stock <= 0 ? "Sold Out" : "Add to Cart ♡"}
-            </button>
-          `
-    }
-</div>
-          `
-        : `
-            <button type="button" class="add-button" data-add="${product.id}"
-                ${product.stock <= 0 ? "disabled" : ""}>
-                ${product.stock <= 0 ? "Sold Out" : "Add to Cart ♡"}
-            </button>
-          `
-    }
-</div>
+                        ${actionButton}
+                    </div>
 
-                    <p class="stock-label">${product.stock > 0 ? `${product.stock} in stock` : "Sold out"}</p>
+                    <p class="stock-label">
+                        ${stock > 0 ? `${stock} in stock` : "Sold out"}
+                    </p>
+
                     ${inCart ? `<p class="in-cart-note">In your cart: ${inCart.quantity}</p>` : ""}
                 </div>
             </article>
         `;
     }).join("");
 }
-// Open product details only when the product is double-clicked.
+
+// Open the product page when the image or product name is double-clicked
 document.addEventListener("dblclick", event => {
-    // Ignore buttons and quantity controls.
     if (event.target.closest("button")) return;
 
-    // Only open when the image or product name is double-clicked.
     const card = event.target.closest("[data-product-page]");
     if (!card) return;
 
-    const isImage = event.target.closest(".product-image");
-    const isName = event.target.closest(".product-info h3");
+    if (
+        !event.target.closest(".product-image") &&
+        !event.target.closest(".product-info h3")
+    ) {
+        return;
+    }
 
-    if (!isImage && !isName) return;
-
-    window.open(
-        `/product.html?id=${card.dataset.productPage}`,
-        "_blank",
-        "noopener"
-    );
+    window.location.href =
+        `/product.html?id=${encodeURIComponent(card.dataset.productPage)}`;
 });
-// Add one album to the cart each time Add to Cart is clicked
+
 function addToCart(productId) {
-    const product = products.find(p => Number(p.id) === Number(productId));
-    if (!product || product.stock <= 0) return;
+    const product = products.find(p => sameId(p.id, productId));
 
-    const existingItem = cart.find(item => Number(item.id) === Number(productId));
-    const currentQuantity = existingItem ? existingItem.quantity : 0;
+    if (!product) {
+        alert("This product could not be found. Please refresh the page.");
+        return;
+    }
 
-    if (currentQuantity >= product.stock) {
-        alert(`Only ${product.stock} unit(s) of this album are in stock.`);
+    const stock = Math.max(0, Number(product.stock) || 0);
+
+    if (stock <= 0) {
+        alert("This product is sold out.");
+        return;
+    }
+
+    const existingItem = cart.find(item => sameId(item.id, product.id));
+    const currentQuantity = existingItem
+        ? Number(existingItem.quantity) || 0
+        : 0;
+
+    if (currentQuantity >= stock) {
+        alert(`Only ${stock} unit(s) of this product are in stock.`);
         return;
     }
 
     if (existingItem) {
-        existingItem.quantity += 1;
+        existingItem.quantity++;
     } else {
         cart.push({
             id: product.id,
             name: product.name,
-            price: Number(product.price),
-            image: product.image,
-            stock: product.stock,
+            price: Number(product.price) || 0,
+            image: product.image || "",
+            stock,
             quantity: 1
         });
     }
@@ -338,27 +345,24 @@ function addToCart(productId) {
     renderStore();
 }
 
-// Display the shopping cart
 function renderCart() {
     const totalQuantity = cart.reduce(
-        (sum, item) => sum + item.quantity,
+        (sum, item) => sum + (Number(item.quantity) || 0),
         0
     );
 
-    if (cartCount) {
-        cartCount.textContent = totalQuantity;
-    }
+    if (cartCount) cartCount.textContent = totalQuantity;
 
     if (!cartItems || !cartFooter) return;
 
-    if (cart.length === 0) {
+    if (!cart.length) {
         cartItems.innerHTML = `
             <div class="cart-empty">
                 <span>♡</span>
                 <h3>Your cart is waiting</h3>
                 <p>Looks like you haven't added anything yet.</p>
                 <a href="#albums" class="primary-button" id="exploreAlbums">
-                    EXPLORE ALBUMS
+                    EXPLORE PRODUCTS
                 </a>
             </div>
         `;
@@ -367,93 +371,72 @@ function renderCart() {
         return;
     }
 
-    cartItems.innerHTML = cart.map(item => `
-        <article class="cart-item">
-            ${item.image
-                ? `<img
-                    class="cart-item-image"
-                    src="${item.image}"
-                    alt="${item.name}"
-                    onerror="this.style.display='none'"
-                >`
-                : ""}
+    cartItems.innerHTML = cart.map(item => {
+        const image = item.image
+            ? `<img class="cart-item-image"
+                    src="${escapeHTML(item.image)}"
+                    alt="${escapeHTML(item.name)}"
+                    onerror="this.style.display='none'">`
+            : "";
 
-            <div class="cart-item-info">
-                <h4>${item.name}</h4>
+        return `
+            <article class="cart-item">
+                ${image}
 
-                <p>₹${item.price.toLocaleString("en-IN")}</p>
+                <div class="cart-item-info">
+                    <h4>${escapeHTML(item.name)}</h4>
+                    <p>₹${(Number(item.price) || 0).toLocaleString("en-IN")}</p>
 
-                <div class="cart-quantity">
-                    <button
-                        type="button"
-                        data-minus="${item.id}"
-                        aria-label="Decrease quantity"
-                    >−</button>
+                    <div class="cart-quantity">
+                        <button type="button" data-minus="${escapeHTML(item.id)}" aria-label="Decrease quantity">−</button>
+                        <span>${Number(item.quantity) || 1}</span>
+                        <button type="button" data-plus="${escapeHTML(item.id)}" aria-label="Increase quantity">+</button>
+                    </div>
 
-                    <span>${item.quantity}</span>
-
-                    <button
-                        type="button"
-                        data-plus="${item.id}"
-                        aria-label="Increase quantity"
-                    >+</button>
+                    <button type="button" class="remove-item" data-remove="${escapeHTML(item.id)}">
+                        Remove ♡
+                    </button>
                 </div>
 
-                <button
-                    type="button"
-                    class="remove-item"
-                    data-remove="${item.id}"
-                >
-                    Remove ♡
-                </button>
-            </div>
-
-            <p class="cart-item-subtotal">
-                ₹${(item.price * item.quantity).toLocaleString("en-IN")}
-            </p>
-        </article>
-    `).join("");
+                <p class="cart-item-subtotal">
+                    ₹${((Number(item.price) || 0) * (Number(item.quantity) || 1)).toLocaleString("en-IN")}
+                </p>
+            </article>
+        `;
+    }).join("");
 
     const total = cart.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+        (sum, item) =>
+            sum + (Number(item.price) || 0) * (Number(item.quantity) || 1),
         0
     );
 
     cartFooter.innerHTML = `
-        <p class="cart-total">
-            Total: ₹${total.toLocaleString("en-IN")}
-        </p>
-
+        <p class="cart-total">Total: ₹${total.toLocaleString("en-IN")}</p>
         <button type="button" class="checkout-button" id="checkoutButton">
             Proceed to Checkout ♡
         </button>
-
         <p class="checkout-note">
-            Checkout will be connected in a later step.
+            Checkout still needs to be connected to Firebase products.
         </p>
     `;
 }
 
-// Handle all cart and product buttons
 document.addEventListener("click", event => {
-        // Open the cart when View Cart is clicked.
     if (event.target.closest("[data-view-cart]")) {
         openCart();
         return;
     }
-    const addButton = event.target.closest("[data-add]");
 
+    const addButton = event.target.closest("[data-add]");
     if (addButton) {
-        addToCart(Number(addButton.dataset.add));
+        addToCart(addButton.dataset.add);
         return;
     }
 
     const plusButton = event.target.closest("[data-plus]");
-
     if (plusButton) {
-        const item = cart.find(
-            p => p.id === Number(plusButton.dataset.plus)
-        );
+        const item = cart.find(p => sameId(p.id, plusButton.dataset.plus));
 
         if (item) {
             if (item.quantity >= item.stock) {
@@ -464,114 +447,80 @@ document.addEventListener("click", event => {
             item.quantity++;
             saveCart();
             renderCart();
-            renderProducts(productGrid, products);
-
-            if (bestsellerGrid) {
-                renderProducts(bestsellerGrid, products.slice(0, 3));
-            }
+            renderStore();
         }
-
         return;
     }
 
     const minusButton = event.target.closest("[data-minus]");
-
     if (minusButton) {
-        const id = Number(minusButton.dataset.minus);
-        const item = cart.find(p => p.id === id);
+        const id = minusButton.dataset.minus;
+        const item = cart.find(p => sameId(p.id, id));
 
         if (item) {
             item.quantity--;
 
             if (item.quantity <= 0) {
-                cart = cart.filter(p => p.id !== id);
+                cart = cart.filter(p => !sameId(p.id, id));
             }
 
             saveCart();
             renderCart();
-            renderProducts(productGrid, products);
-
-            if (bestsellerGrid) {
-                renderProducts(bestsellerGrid, products.slice(0, 3));
-            }
+            renderStore();
         }
-
         return;
     }
 
     const removeButton = event.target.closest("[data-remove]");
-
     if (removeButton) {
-        const id = Number(removeButton.dataset.remove);
-
-        cart = cart.filter(p => p.id !== id);
+        const id = removeButton.dataset.remove;
+        cart = cart.filter(p => !sameId(p.id, id));
 
         saveCart();
         renderCart();
-        ensureStoreFilters();
         renderStore();
-
         return;
     }
 
     if (event.target.closest("#checkoutButton")) {
-    window.location.href = "/checkout.html";
-    return;
-}
+        alert("Checkout is not yet connected to Firebase products. Your cart is saved, but orders are not being submitted.");
+    }
 });
 
-// Open cart drawer
+// Cart drawer controls
 function openCart() {
     if (cartOverlay) cartOverlay.classList.add("active");
-    if (cartDrawer) cartDrawer.classList.add("active");
-
     if (cartDrawer) {
+        cartDrawer.classList.add("active");
         cartDrawer.setAttribute("aria-hidden", "false");
     }
-
     document.body.style.overflow = "hidden";
 }
 
-// Close cart drawer
 function closeCart() {
     if (cartOverlay) cartOverlay.classList.remove("active");
-    if (cartDrawer) cartDrawer.classList.remove("active");
-
     if (cartDrawer) {
+        cartDrawer.classList.remove("active");
         cartDrawer.setAttribute("aria-hidden", "true");
     }
-
     document.body.style.overflow = "";
 }
 
-
-// Connect the cart button in the navigation
 const cartButton = document.getElementById("cartButton");
+if (cartButton) cartButton.addEventListener("click", openCart);
 
-if (cartButton) {
-    cartButton.addEventListener("click", openCart);
-}
+if (cartClose) cartClose.addEventListener("click", closeCart);
+if (cartOverlay) cartOverlay.addEventListener("click", closeCart);
 
 document.addEventListener("click", event => {
-    if (event.target.closest("#exploreAlbums")) {
-        closeCart();
-    }
+    if (event.target.closest("#exploreAlbums")) closeCart();
 });
-
-
-if (cartClose) {
-    cartClose.addEventListener("click", closeCart);
-}
-
-if (cartOverlay) {
-    cartOverlay.addEventListener("click", closeCart);
-}
 
 document.addEventListener("keydown", event => {
     if (event.key === "Escape") closeCart();
 });
 
-// Start the app
+// Start the store
 renderCart();
 
 loadProducts().then(() => {
@@ -581,7 +530,7 @@ loadProducts().then(() => {
     }
 });
 
-// KPOPIFY Hamburger Navigation
+// Hamburger navigation
 document.addEventListener("DOMContentLoaded", () => {
     const menuButton = document.getElementById("kpopifyMenuButton");
     const menuPanel = document.getElementById("kpopifyMenuPanel");
@@ -594,36 +543,33 @@ document.addEventListener("DOMContentLoaded", () => {
         menuButton.setAttribute("aria-label", "Open navigation menu");
     }
 
-    menuButton.addEventListener("click", (event) => {
+    menuButton.addEventListener("click", event => {
         event.stopPropagation();
 
         const isOpen = menuPanel.classList.toggle("visible");
 
         menuButton.setAttribute("aria-expanded", String(isOpen));
-        menuButton.setAttribute(
-            "aria-label",
-            isOpen ? "Close navigation menu" : "Open navigation menu"
-        );
+        menuButton.setAttribute("aria-label", isOpen
+            ? "Close navigation menu"
+            : "Open navigation menu");
     });
 
     menuPanel.querySelectorAll("a").forEach(link => {
         link.addEventListener("click", closeMenu);
     });
 
-    document.addEventListener("click", (event) => {
-        if (
-            !menuPanel.contains(event.target) &&
-            !menuButton.contains(event.target)
-        ) {
+    document.addEventListener("click", event => {
+        if (!menuPanel.contains(event.target) && !menuButton.contains(event.target)) {
             closeMenu();
         }
     });
 
-    document.addEventListener("keydown", (event) => {
+    document.addEventListener("keydown", event => {
         if (event.key === "Escape") closeMenu();
     });
 });
-/* KPOPIFY AI Chatbot */
+
+// KPOPIFY AI Chatbot
 (() => {
     const toggle = document.getElementById("chat-toggle");
     const close = document.getElementById("chat-close");
@@ -633,18 +579,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const messages = document.getElementById("chat-messages");
 
     if (!toggle || !close || !chatWindow || !chatForm || !chatInput || !messages) {
-    console.warn("Missing chatbot elements:", {
-        toggle: !!toggle,
-        close: !!close,
-        chatWindow: !!chatWindow,
-        chatForm: !!chatForm,
-        chatInput: !!chatInput,
-        messages: !!messages
-    });
-    return;
-}
+        return;
+    }
 
-    // OPEN CHAT
     toggle.addEventListener("click", () => {
         chatWindow.classList.remove("chat-hidden");
         chatWindow.style.display = "flex";
@@ -652,14 +589,12 @@ document.addEventListener("DOMContentLoaded", () => {
         chatInput.focus();
     });
 
-    // CLOSE CHAT
     close.addEventListener("click", () => {
         chatWindow.classList.add("chat-hidden");
         chatWindow.style.display = "none";
         toggle.style.display = "flex";
     });
 
-    // DISPLAY MESSAGES
     function addMessage(text, className) {
         const message = document.createElement("div");
         message.className = className;
@@ -669,8 +604,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return message;
     }
 
-    // SEND MESSAGE TO GEMINI
-    chatForm.addEventListener("submit", async (event) => {
+    chatForm.addEventListener("submit", async event => {
         event.preventDefault();
 
         const message = chatInput.value.trim();
@@ -688,9 +622,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const response = await fetch("/api/chat", {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ message })
             });
 
@@ -702,48 +634,50 @@ document.addEventListener("DOMContentLoaded", () => {
 
             thinking.textContent = data.reply || "Here are your matching products! 💗";
 
-(data.products || []).forEach(product => {
-    const card = document.createElement("div");
-    card.className = "bot-message";
-    card.style.maxWidth = "100%";
+            (data.products || []).forEach(product => {
+                const card = document.createElement("div");
+                card.className = "bot-message";
+                card.style.maxWidth = "100%";
 
-    if (product.image) {
-        const img = document.createElement("img");
-        img.src = product.image;
-        img.alt = product.name;
-        img.style.cssText = "width:100%;max-height:140px;object-fit:contain;border-radius:8px;";
-        img.onerror = () => img.style.display = "none";
-        card.appendChild(img);
-    }
+                if (product.image) {
+                    const img = document.createElement("img");
+                    img.src = product.image;
+                    img.alt = product.name || "Product image";
+                    img.style.cssText = "width:100%;max-height:140px;object-fit:contain;border-radius:8px;";
+                    img.onerror = () => img.style.display = "none";
+                    card.appendChild(img);
+                }
 
-    const title = document.createElement("strong");
-    title.textContent = product.name;
-    title.style.display = "block";
-    title.style.marginTop = "8px";
-    card.appendChild(title);
+                const title = document.createElement("strong");
+                title.textContent = product.name || "Product";
+                title.style.display = "block";
+                title.style.marginTop = "8px";
+                card.appendChild(title);
 
-    const price = document.createElement("p");
-    price.textContent = `₹${Number(product.price).toLocaleString("en-IN")}`;
-    price.style.margin = "6px 0";
-    card.appendChild(price);
+                const price = document.createElement("p");
+                price.textContent = `₹${(Number(product.price) || 0).toLocaleString("en-IN")}`;
+                price.style.margin = "6px 0";
+                card.appendChild(price);
 
-    const stock = document.createElement("p");
-    stock.textContent = product.stock > 0 ? "In stock 💗" : "Currently out of stock";
-    stock.style.margin = "4px 0 8px";
-    card.appendChild(stock);
+                const stock = document.createElement("p");
+                stock.textContent = Number(product.stock) > 0
+                    ? "In stock 💗"
+                    : "Currently out of stock";
+                stock.style.margin = "4px 0 8px";
+                card.appendChild(stock);
 
-    const link = document.createElement("a");
-    link.href = `/product.html?id=${product.id}`;
-link.target = "_blank";
-link.rel = "noopener";
-    link.textContent = "View product";
-    link.style.cssText = "display:inline-block;padding:8px 12px;background:#f28bb5;color:white;border-radius:18px;text-decoration:none;font-size:13px;";
-    card.appendChild(link);
+                const link = document.createElement("a");
+                link.href = `/product.html?id=${encodeURIComponent(product.id)}`;
+                link.target = "_blank";
+                link.rel = "noopener";
+                link.textContent = "View product";
+                link.style.cssText = "display:inline-block;padding:8px 12px;background:#f28bb5;color:white;border-radius:18px;text-decoration:none;font-size:13px;";
+                card.appendChild(link);
 
-    messages.appendChild(card);
-});
+                messages.appendChild(card);
+            });
 
-messages.scrollTop = messages.scrollHeight;
+            messages.scrollTop = messages.scrollHeight;
         } catch (error) {
             thinking.textContent = "Sorry, I couldn't reply right now. Please try again. 💗";
             console.error("KPOPIFY chatbot:", error);
