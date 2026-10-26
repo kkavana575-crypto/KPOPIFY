@@ -20,6 +20,7 @@ app.use("/uploads", express.static(path.join(__dirname, "public", "uploads")));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api/products", productsRouter);
+app.use("/api/firebase-products", firebaseProductsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/firebase-test", firebaseTestRouter);
