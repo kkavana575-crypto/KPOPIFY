@@ -350,10 +350,9 @@ Write a natural response to the customer.
             `,
 
             config: {
-                maxOutputTokens: 220,
-                temperature: 0.85
-            }
-        });
+    maxOutputTokens: 120,
+    temperature: 0.7
+}
 
         res.json({
             success: true,
