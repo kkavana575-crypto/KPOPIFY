@@ -1,34 +1,9 @@
 
 const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
 const router = express.Router();
-const db = require("../database/database");
+const firebaseDb = require("../database/firebase");
 
-const uploadDir = path.join(__dirname, "..", "..", "public", "uploads", "products");
-fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase();
-        cb(null, `product-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
-    }
-});
-
-const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (_req, file, cb) => {
-        if (!file.mimetype || !file.mimetype.startsWith("image/")) {
-            return cb(new Error("Please upload an image file."));
-        }
-        cb(null, true);
-    }
-});
-
-// Use the same category names as the store filters.
+// Normalize category names used by your store.
 function normalizeCategory(value) {
     const category = String(value || "Albums").trim().toLowerCase();
 
@@ -39,67 +14,85 @@ function normalizeCategory(value) {
     return null;
 }
 
-function validateProduct(body) {
-    const name = String(body.name || "").trim();
-    const groupName = String(body.group_name || "").trim();
-    const description = String(body.description || "").trim();
-    const category = normalizeCategory(body.category);
-    const price = Number(body.price);
-    const stock = Number(body.stock);
+// Validate product details.
+function validateProduct(body, current = {}) {
+    const name = String(body.name ?? current.name ?? "").trim();
+    const groupName = String(
+        body.group_name ?? current.group_name ?? ""
+    ).trim();
+    const description = String(
+        body.description ?? current.description ?? ""
+    ).trim();
+
+    const category = normalizeCategory(
+        body.category ?? current.category ?? "Albums"
+    );
+
+    const price = Number(body.price ?? current.price);
+    const stock = Number(body.stock ?? current.stock);
+
+    const bestsellerValue =
+        body.is_bestseller ?? current.is_bestseller ?? 0;
 
     const isBestseller =
-        body.is_bestseller === "1" ||
-        body.is_bestseller === "on" ||
-        body.is_bestseller === "true" ||
-        body.is_bestseller === true;
+        bestsellerValue === true ||
+        ["1", "on", "true"].includes(String(bestsellerValue).toLowerCase());
 
-    if (
-        !name ||
-        !groupName ||
-        !Number.isFinite(price) ||
-        price <= 0 ||
-        !Number.isInteger(stock) ||
-        stock < 0
-    ) {
+    if (!name || !groupName) {
         return {
-            error: "Enter a name, group/artist, valid price, and whole-number stock (0 or more)."
+            error: "Enter the product name and group/artist."
+        };
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+        return {
+            error: "Enter a valid non-negative product price."
+        };
+    }
+
+    if (!Number.isInteger(stock) || stock < 0) {
+        return {
+            error: "Stock must be a whole number of zero or more."
         };
     }
 
     if (!category) {
         return {
-            error: "Choose Albums, PPULBATU, or Members for the category."
+            error: "Choose Albums, PPULBATU, or Members."
         };
     }
 
     return {
         name,
-        groupName,
-        description,
-        category,
+        group_name: groupName,
         price,
         stock,
-        isBestseller: isBestseller ? 1 : 0
+        description,
+        category,
+        is_bestseller: isBestseller ? 1 : 0
     };
 }
 
-// Return products with consistent category names.
-router.get("/", (_req, res) => {
+// GET: Fetch all products from Firebase.
+router.get("/", async (req, res) => {
     try {
-        const products = db.prepare("SELECT * FROM products ORDER BY id DESC").all();
+        const snapshot = await firebaseDb.ref("products").once("value");
+        const data = snapshot.val() || {};
 
-        const normalizedProducts = products.map(product => ({
+        const products = Object.entries(data).map(([key, product]) => ({
             ...product,
+            id: product.id || key,
             category: normalizeCategory(product.category) || product.category
         }));
 
         res.json({
             success: true,
-            count: normalizedProducts.length,
-            products: normalizedProducts
+            count: products.length,
+            products
         });
     } catch (error) {
-        console.error("Error fetching products:", error);
+        console.error("Error fetching Firebase products:", error);
+
         res.status(500).json({
             success: false,
             message: "Could not fetch products."
@@ -107,115 +100,106 @@ router.get("/", (_req, res) => {
     }
 });
 
-// Add a product.
-router.post("/", upload.single("image"), (req, res) => {
+// POST: Add a product, including its image data, to Firebase.
+router.post("/", async (req, res) => {
     try {
-        const fields = validateProduct(req.body);
+        const fields = validateProduct(req.body || {});
 
         if (fields.error) {
-            if (req.file) fs.unlink(req.file.path, () => {});
             return res.status(400).json({
                 success: false,
                 message: fields.error
             });
         }
 
-        const imagePath = req.file
-            ? `/uploads/products/${req.file.filename}`
-            : (String(req.body.image_url || "").trim() || null);
+        const image = typeof req.body.image === "string"
+            ? req.body.image
+            : "";
 
-        const result = db.prepare(`
-            INSERT INTO products
-            (name, group_name, price, stock, image, description, category, is_bestseller)
-            VALUES
-            (@name, @groupName, @price, @stock, @image, @description, @category, @isBestseller)
-        `).run({
+        if (image.length > 950000) {
+            return res.status(413).json({
+                success: false,
+                message: "Image is too large. Please resize it and try again."
+            });
+        }
+
+        const productRef = firebaseDb.ref("products").push();
+
+        const product = {
+            id: productRef.key,
             ...fields,
-            image: imagePath
-        });
+            image,
+            created_at: new Date().toISOString()
+        };
 
-        const product = db.prepare(
-            "SELECT * FROM products WHERE id = ?"
-        ).get(result.lastInsertRowid);
+        await productRef.set(product);
 
         res.status(201).json({
             success: true,
-            product: {
-                ...product,
-                category: normalizeCategory(product.category) || product.category
-            }
+            message: "Product saved successfully.",
+            product
         });
     } catch (error) {
-        console.error("Error adding product:", error);
-        if (req.file) fs.unlink(req.file.path, () => {});
+        console.error("Error saving Firebase product:", error);
+
         res.status(500).json({
             success: false,
-            message: "Could not add product."
+            message: "Could not save product."
         });
     }
 });
 
-// Update a product.
-router.put("/:id", upload.single("image"), (req, res) => {
+// PUT: Update a product and preserve its existing image if no new image is sent.
+router.put("/:id", async (req, res) => {
     try {
-        const id = Number(req.params.id);
-        const oldProduct = db.prepare(
-            "SELECT * FROM products WHERE id = ?"
-        ).get(id);
+        const productRef = firebaseDb.ref(`products/${req.params.id}`);
+        const snapshot = await productRef.once("value");
 
-        if (!oldProduct) {
-            if (req.file) fs.unlink(req.file.path, () => {});
+        if (!snapshot.exists()) {
             return res.status(404).json({
                 success: false,
                 message: "Product not found."
             });
         }
 
-        const fields = validateProduct(req.body);
+        const current = snapshot.val();
+        const fields = validateProduct(req.body || {}, current);
 
         if (fields.error) {
-            if (req.file) fs.unlink(req.file.path, () => {});
             return res.status(400).json({
                 success: false,
                 message: fields.error
             });
         }
 
-        const imagePath = req.file
-            ? `/uploads/products/${req.file.filename}`
-            : oldProduct.image;
+        const image = req.body.image === undefined
+            ? (current.image || "")
+            : String(req.body.image || "");
 
-        db.prepare(`
-            UPDATE products
-            SET name = @name,
-                group_name = @groupName,
-                price = @price,
-                stock = @stock,
-                image = @image,
-                description = @description,
-                category = @category,
-                is_bestseller = @isBestseller
-            WHERE id = @id
-        `).run({
+        if (image.length > 950000) {
+            return res.status(413).json({
+                success: false,
+                message: "Image is too large. Please resize it and try again."
+            });
+        }
+
+        const updatedProduct = {
+            ...current,
             ...fields,
-            image: imagePath,
-            id
-        });
+            id: req.params.id,
+            image
+        };
 
-        const product = db.prepare(
-            "SELECT * FROM products WHERE id = ?"
-        ).get(id);
+        await productRef.set(updatedProduct);
 
         res.json({
             success: true,
-            product: {
-                ...product,
-                category: normalizeCategory(product.category) || product.category
-            }
+            message: "Product updated successfully.",
+            product: updatedProduct
         });
     } catch (error) {
-        console.error("Error updating product:", error);
-        if (req.file) fs.unlink(req.file.path, () => {});
+        console.error("Error updating Firebase product:", error);
+
         res.status(500).json({
             success: false,
             message: "Could not update product."
@@ -223,44 +207,33 @@ router.put("/:id", upload.single("image"), (req, res) => {
     }
 });
 
-// Delete a product.
-router.delete("/:id", (req, res) => {
+// DELETE: Remove a product from Firebase.
+router.delete("/:id", async (req, res) => {
     try {
-        const id = Number(req.params.id);
-        const result = db.prepare(
-            "DELETE FROM products WHERE id = ?"
-        ).run(id);
+        const productRef = firebaseDb.ref(`products/${req.params.id}`);
+        const snapshot = await productRef.once("value");
 
-        if (!result.changes) {
+        if (!snapshot.exists()) {
             return res.status(404).json({
                 success: false,
                 message: "Product not found."
             });
         }
 
+        await productRef.remove();
+
         res.json({
             success: true,
-            message: "Product deleted."
+            message: "Product deleted successfully."
         });
     } catch (error) {
-        console.error("Error deleting product:", error);
+        console.error("Error deleting Firebase product:", error);
+
         res.status(500).json({
             success: false,
             message: "Could not delete product."
         });
     }
-});
-
-router.use((error, _req, res, _next) => {
-    const message =
-        error.code === "LIMIT_FILE_SIZE"
-            ? "Image must be 5 MB or smaller."
-            : error.message || "Upload failed.";
-
-    res.status(400).json({
-        success: false,
-        message
-    });
 });
 
 module.exports = router;
