@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/api/products", productsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/orders", ordersRouter);
+app.use("/api/firebase-test", firebaseTestRouter);
 
 app.get("/api/health", (req, res) => {
     res.json({
