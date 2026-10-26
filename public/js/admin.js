@@ -1,4 +1,4 @@
-```javascript
+
 const form = document.getElementById("productForm");
 const statusBox = document.getElementById("status");
 const submitButton = document.getElementById("submitButton");
@@ -375,4 +375,4 @@ productSearch.addEventListener("input", renderProducts);
 categoryFilter.addEventListener("change", renderProducts);
 
 refreshProducts();
-```
+
