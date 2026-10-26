@@ -22,6 +22,7 @@ app.use("/api/products", productsRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/firebase-test", firebaseTestRouter);
+console.log("FIREBASE TEST ROUTE REGISTERED");
 
 app.get("/api/health", (req, res) => {
     res.json({
