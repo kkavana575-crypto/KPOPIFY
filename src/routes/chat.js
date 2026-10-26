@@ -349,12 +349,13 @@ STRICT RULES:
 Write a natural response to the customer.
             `,
 
-            config: {
+config: {
     maxOutputTokens: 120,
     temperature: 0.7
 }
+});
 
-        res.json({
+res.json({
             success: true,
             reply: response.text ||
                 "Omo, my thoughts got tangled for a second! 💗 Can you ask me that once more?",
