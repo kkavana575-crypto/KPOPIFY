@@ -1,251 +1,343 @@
 
 const express = require("express");
+const path = require("path");
+const fs = require("fs");
+const multer = require("multer");
 const router = express.Router();
 const firebaseDb = require("../database/firebase");
 
-// GET: Fetch all products from Firebase
-router.get("/", async (req, res) => {
-  try {
-    const snapshot = await firebaseDb.ref("products").once("value");
-    const data = snapshot.val() || {};
+// Temporary/local image upload directory.
+// Note: Render's local filesystem may not persist uploaded files after redeployment.
+const uploadDir = path.join(
+    __dirname,
+    "..",
+    "..",
+    "public",
+    "uploads",
+    "products"
+);
 
-    const products = Object.entries(data).map(([id, product]) => ({
-      ...product,
-      id: product.id || id
-    }));
+fs.mkdirSync(uploadDir, { recursive: true });
 
-    res.json({
-      success: true,
-      count: products.length,
-      products
-    });
-  } catch (error) {
-    console.error("Firebase product fetch failed:", error);
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadDir),
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const uniqueName =
+            `product-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch products from Firebase."
-    });
-  }
+        cb(null, uniqueName);
+    }
 });
 
-// POST: Add a product and its image to Firebase
-router.post("/", async (req, res) => {
-  try {
-    const {
-      name,
-      group_name,
-      price,
-      stock,
-      image,
-      description,
-      category,
-      is_bestseller
-    } = req.body;
+const upload = multer({
+    storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024
+    },
+    fileFilter: (_req, file, cb) => {
+        if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+            return cb(new Error("Please upload an image file."));
+        }
 
-    if (
-      !name ||
-      !group_name ||
-      price === undefined ||
-      stock === undefined
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, group, price and stock are required."
-      });
+        cb(null, true);
     }
-
-    const productName = String(name).trim();
-    const groupName = String(group_name).trim();
-    const productPrice = Number(price);
-    const productStock = Number(stock);
-    const productImage = typeof image === "string" ? image : "";
-
-    if (!productName || !groupName) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter a product name and group/artist."
-      });
-    }
-
-    if (
-      !Number.isFinite(productPrice) ||
-      productPrice < 0 ||
-      !Number.isInteger(productStock) ||
-      productStock < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Enter a valid price and non-negative whole-number stock."
-      });
-    }
-
-    // Limit image data to avoid oversized database records.
-    if (productImage.length > 950000) {
-      return res.status(413).json({
-        success: false,
-        message: "Image data is too large. Please resize the image and try again."
-      });
-    }
-
-    const newProductRef = firebaseDb.ref("products").push();
-
-    const product = {
-      id: newProductRef.key,
-      name: productName,
-      group_name: groupName,
-      price: productPrice,
-      stock: productStock,
-      image: productImage,
-      description: String(description || ""),
-      category: String(category || "TXT"),
-      is_bestseller: Number(is_bestseller) ? 1 : 0,
-      created_at: new Date().toISOString()
-    };
-
-    await newProductRef.set(product);
-
-    res.status(201).json({
-      success: true,
-      message: "Product saved successfully.",
-      product
-    });
-  } catch (error) {
-    console.error("Firebase product creation failed:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to save product to Firebase."
-    });
-  }
 });
 
-// PUT: Edit a product without losing its existing image
-router.put("/:id", async (req, res) => {
-  try {
-    const productId = req.params.id;
-    const productRef = firebaseDb.ref(`products/${productId}`);
-    const snapshot = await productRef.once("value");
+// Normalize categories so the storefront filters work consistently.
+function normalizeCategory(value) {
+    const category = String(value || "Albums").trim().toLowerCase();
 
-    if (!snapshot.exists()) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found."
-      });
-    }
+    if (["albums", "txt"].includes(category)) return "Albums";
+    if (["ppulbatu", "tubatu"].includes(category)) return "PPULBATU";
+    if (["members", "member"].includes(category)) return "Members";
 
-    const current = snapshot.val();
-    const updates = req.body || {};
+    return null;
+}
 
-    const name = String(updates.name ?? current.name ?? "").trim();
-    const groupName = String(
-      updates.group_name ?? current.group_name ?? ""
-    ).trim();
+function parseBestseller(value) {
+    return (
+        value === true ||
+        value === 1 ||
+        value === "1" ||
+        value === "true" ||
+        value === "on"
+    ) ? 1 : 0;
+}
 
-    const price = updates.price === undefined
-      ? Number(current.price)
-      : Number(updates.price);
-
-    const stock = updates.stock === undefined
-      ? Number(current.stock)
-      : Number(updates.stock);
+function validateProduct(body) {
+    const name = String(body.name || "").trim();
+    const groupName = String(body.group_name || "").trim();
+    const description = String(body.description || "").trim();
+    const category = normalizeCategory(body.category);
+    const price = Number(body.price);
+    const stock = Number(body.stock);
 
     if (!name || !groupName) {
-      return res.status(400).json({
-        success: false,
-        message: "Name and group/artist are required."
-      });
+        return {
+            error: "Please enter a product name and group/artist."
+        };
     }
 
     if (
-      !Number.isFinite(price) ||
-      price < 0 ||
-      !Number.isInteger(stock) ||
-      stock < 0
+        body.price === undefined ||
+        body.price === "" ||
+        !Number.isFinite(price) ||
+        price <= 0
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Enter a valid price and non-negative whole-number stock."
-      });
+        return {
+            error: "Enter a valid price greater than zero."
+        };
     }
 
-    // Keep the current image unless a new image is supplied.
-    const image = updates.image === undefined
-      ? (current.image || "")
-      : String(updates.image || "");
-
-    if (image.length > 950000) {
-      return res.status(413).json({
-        success: false,
-        message: "Image data is too large. Please resize the image and try again."
-      });
+    if (
+        body.stock === undefined ||
+        body.stock === "" ||
+        !Number.isInteger(stock) ||
+        stock < 0
+    ) {
+        return {
+            error: "Stock must be a whole number of zero or more."
+        };
     }
 
-    const updatedProduct = {
-      ...current,
-      id: productId,
-      name,
-      group_name: groupName,
-      price,
-      stock,
-      image,
-      description: String(
-        updates.description ?? current.description ?? ""
-      ),
-      category: String(
-        updates.category ?? current.category ?? "TXT"
-      ),
-      is_bestseller: Number(
-        updates.is_bestseller ?? current.is_bestseller ?? 0
-      ) ? 1 : 0
+    if (!category) {
+        return {
+            error: "Choose Albums, PPULBATU, or Members."
+        };
+    }
+
+    return {
+        name,
+        group_name: groupName,
+        price,
+        stock,
+        description,
+        category,
+        is_bestseller: parseBestseller(body.is_bestseller)
     };
+}
 
-    // Preserve the original creation date.
-    await productRef.set(updatedProduct);
+function imagePathFromFile(file) {
+    return file
+        ? `/uploads/products/${file.filename}`
+        : "";
+}
 
-    res.json({
-      success: true,
-      message: "Product updated successfully.",
-      product: updatedProduct
-    });
-  } catch (error) {
-    console.error("Firebase product update failed:", error);
+// GET: Fetch all products from Firebase.
+router.get("/", async (_req, res) => {
+    try {
+        const snapshot = await firebaseDb.ref("products").once("value");
+        const data = snapshot.val() || {};
 
-    res.status(500).json({
-      success: false,
-      message: "Failed to update product in Firebase."
-    });
-  }
+        const products = Object.entries(data)
+            .map(([key, product]) => ({
+                ...product,
+                id: String(product.id || key),
+                category: normalizeCategory(product.category) || product.category || "Albums"
+            }))
+            .sort((a, b) =>
+                String(b.created_at || "").localeCompare(String(a.created_at || ""))
+            );
+
+        res.json({
+            success: true,
+            count: products.length,
+            products
+        });
+    } catch (error) {
+        console.error("Firebase product fetch failed:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch products from Firebase."
+        });
+    }
 });
 
-// DELETE: Remove a product from Firebase
-router.delete("/:id", async (req, res) => {
-  try {
-    const productRef = firebaseDb.ref(`products/${req.params.id}`);
-    const snapshot = await productRef.once("value");
+// POST: Add a product to Firebase.
+// Supports FormData with an uploaded image or JSON with an image URL.
+router.post("/", upload.single("image"), async (req, res) => {
+    try {
+        const fields = validateProduct(req.body || {});
 
-    if (!snapshot.exists()) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found."
-      });
+        if (fields.error) {
+            if (req.file) fs.unlink(req.file.path, () => {});
+
+            return res.status(400).json({
+                success: false,
+                message: fields.error
+            });
+        }
+
+        // Uploaded image takes priority; otherwise accept an image URL.
+        const image = imagePathFromFile(req.file) ||
+            String(req.body.image_url || req.body.image || "").trim();
+
+        const productRef = firebaseDb.ref("products").push();
+
+        const product = {
+            id: productRef.key,
+            ...fields,
+            image,
+            created_at: new Date().toISOString()
+        };
+
+        await productRef.set(product);
+
+        res.status(201).json({
+            success: true,
+            message: "Product saved successfully in Firebase.",
+            product
+        });
+    } catch (error) {
+        console.error("Firebase product creation failed:", error);
+
+        if (req.file) fs.unlink(req.file.path, () => {});
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to save product to Firebase."
+        });
     }
+});
 
-    await productRef.remove();
+// PUT: Update a Firebase product.
+// If no new image is uploaded, keep the existing image.
+router.put("/:id", upload.single("image"), async (req, res) => {
+    try {
+        const productId = String(req.params.id || "");
 
-    res.json({
-      success: true,
-      message: "Product deleted successfully."
+        if (!productId || productId.includes(".") ||
+            productId.includes("#") || productId.includes("$") ||
+            productId.includes("[") || productId.includes("]") ||
+            productId.includes("/")) {
+            if (req.file) fs.unlink(req.file.path, () => {});
+
+            return res.status(400).json({
+                success: false,
+                message: "Invalid product ID."
+            });
+        }
+
+        const productRef = firebaseDb.ref(`products/${productId}`);
+        const snapshot = await productRef.once("value");
+
+        if (!snapshot.exists()) {
+            if (req.file) fs.unlink(req.file.path, () => {});
+
+            return res.status(404).json({
+                success: false,
+                message: "Product not found."
+            });
+        }
+
+        const current = snapshot.val();
+        const body = req.body || {};
+
+        const merged = {
+            name: body.name ?? current.name,
+            group_name: body.group_name ?? current.group_name,
+            price: body.price ?? current.price,
+            stock: body.stock ?? current.stock,
+            description: body.description ?? current.description ?? "",
+            category: body.category ?? current.category ?? "Albums",
+            is_bestseller: body.is_bestseller ?? current.is_bestseller ?? 0
+        };
+
+        const fields = validateProduct(merged);
+
+        if (fields.error) {
+            if (req.file) fs.unlink(req.file.path, () => {});
+
+            return res.status(400).json({
+                success: false,
+                message: fields.error
+            });
+        }
+
+        const image = imagePathFromFile(req.file) ||
+            String(body.image_url || body.image || current.image || "").trim();
+
+        const product = {
+            ...current,
+            ...fields,
+            id: productId,
+            image,
+            created_at: current.created_at || new Date().toISOString()
+        };
+
+        await productRef.set(product);
+
+        res.json({
+            success: true,
+            message: "Product updated successfully in Firebase.",
+            product
+        });
+    } catch (error) {
+        console.error("Firebase product update failed:", error);
+
+        if (req.file) fs.unlink(req.file.path, () => {});
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to update product in Firebase."
+        });
+    }
+});
+
+// DELETE: Remove a product from Firebase.
+router.delete("/:id", async (req, res) => {
+    try {
+        const productId = String(req.params.id || "");
+
+        if (!productId || productId.includes(".") ||
+            productId.includes("#") || productId.includes("$") ||
+            productId.includes("[") || productId.includes("]") ||
+            productId.includes("/")) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid product ID."
+            });
+        }
+
+        const productRef = firebaseDb.ref(`products/${productId}`);
+        const snapshot = await productRef.once("value");
+
+        if (!snapshot.exists()) {
+            return res.status(404).json({
+                success: false,
+                message: "Product not found."
+            });
+        }
+
+        await productRef.remove();
+
+        res.json({
+            success: true,
+            message: "Product deleted successfully from Firebase."
+        });
+    } catch (error) {
+        console.error("Firebase product deletion failed:", error);
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete product from Firebase."
+        });
+    }
+});
+
+// Handle image upload errors.
+router.use((error, _req, res, _next) => {
+    const message =
+        error.code === "LIMIT_FILE_SIZE"
+            ? "Image must be 5 MB or smaller."
+            : error.message || "Image upload failed.";
+
+    res.status(400).json({
+        success: false,
+        message
     });
-  } catch (error) {
-    console.error("Firebase product deletion failed:", error);
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to delete product from Firebase."
-    });
-  }
 });
 
 module.exports = router;
-
