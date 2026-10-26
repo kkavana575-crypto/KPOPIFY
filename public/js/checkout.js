@@ -90,20 +90,26 @@ checkoutForm.addEventListener("submit", async event => {
     const customer = Object.fromEntries(formData.entries());
 
     // Firebase product IDs are strings, not necessarily numbers.
-    const items = cart.map(item => ({
-        id: String(item.id ?? ""),
-        quantity: Number(item.quantity)
-    }));
+    
+const items = cart.map(item => ({
+    id: String(item.id ?? ""),
+    quantity: Number(item.quantity),
+    name: String(item.name || "Product"),
+    price: Number(item.price)
+}));
 
-    if (items.some(item =>
-        !item.id ||
-        !Number.isSafeInteger(item.quantity) ||
-        item.quantity <= 0
-    )) {
-        checkoutMessage.textContent =
-            "Your cart contains invalid items. Please return to the store and add them again.";
-        return;
-    }
+if (items.some(item =>
+    !item.id ||
+    !Number.isSafeInteger(item.quantity) ||
+    item.quantity <= 0 ||
+    !Number.isFinite(item.price) ||
+    item.price < 0
+)) {
+    checkoutMessage.textContent =
+        "Your cart contains invalid items. Please return to the store and add them again.";
+    return;
+}
+
 
     placeOrderButton.disabled = true;
     placeOrderButton.textContent = "Placing your order...";
