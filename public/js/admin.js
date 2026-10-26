@@ -1,4 +1,4 @@
-
+```javascript
 const form = document.getElementById("productForm");
 const statusBox = document.getElementById("status");
 const submitButton = document.getElementById("submitButton");
@@ -51,13 +51,12 @@ function categoryLabel(value) {
 
 async function readResponse(response) {
   const text = await response.text();
-
   let data;
 
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error("Unexpected server response. Please try again.");
+    throw new Error("The server returned an unexpected response.");
   }
 
   if (!response.ok || !data.success) {
@@ -113,14 +112,14 @@ function renderProducts() {
   }
 
   productsList.innerHTML = filtered.map(product => {
-    const id = String(product.id);
+    const id = String(product.id ?? "");
     const category = categoryLabel(product.category);
     const image = String(product.image || "").trim();
 
     const imageMarkup = image
       ? `<img class="product-image"
               src="${escapeHTML(image)}"
-              alt="${escapeHTML(product.name)}"
+              alt="${escapeHTML(product.name || "Product")}"
               loading="lazy"
               onerror="this.style.display='none'">`
       : `<div class="product-image product-image-placeholder"
@@ -173,7 +172,6 @@ async function refreshProducts() {
     const data = await readResponse(response);
 
     products = Array.isArray(data.products) ? data.products : [];
-
     renderProducts();
   } catch (error) {
     productsList.innerHTML = `
@@ -233,6 +231,7 @@ function editProduct(id) {
         ? "Member"
         : "TXT";
 
+  // Keep the current image unless a replacement is selected.
   form.elements.image.value = "";
 
   formTitle.textContent = "Edit product";
@@ -241,12 +240,42 @@ function editProduct(id) {
 
   setStatus(
     `Editing: ${product.name || "product"}. ` +
-    "Leave the image field empty to keep the existing image."
+    "Leave the image unchanged to keep the current photo."
   );
 
   document.getElementById("formPanel").scrollIntoView({
     behavior: "smooth",
     block: "start"
+  });
+}
+
+// Read an uploaded image and convert it to a data URL for Firebase.
+function readImageAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.size) {
+      resolve("");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please select an image file."));
+      return;
+    }
+
+    // Keep image data small enough for practical database storage.
+    if (file.size > 700 * 1024) {
+      reject(new Error(
+        "This image is too large. Please resize it to under 700 KB and try again."
+      ));
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read the selected image."));
+
+    reader.readAsDataURL(file);
   });
 }
 
@@ -256,40 +285,44 @@ form.addEventListener("submit", async event => {
   submitButton.disabled = true;
   cancelButton.disabled = true;
 
-  setStatus(
-    editingId === null ? "Adding product…" : "Saving changes…"
-  );
+  setStatus(editingId === null ? "Adding product…" : "Saving changes…");
 
   try {
     const formData = new FormData(form);
-    const imageField = form.elements.image;
-    const imageFile = imageField?.files?.[0];
-
-    if (imageFile && imageFile.size > 0) {
-      throw new Error(
-        "Direct image uploads aren't connected to Firebase yet. " +
-        "Please leave the file empty and use an image URL if your form supports one."
-      );
-    }
 
     const existingProduct = editingId === null
       ? null
       : products.find(item => String(item.id) === editingId);
 
-    const imageValue = formData.get("image");
+    const imageFile = form.elements.image?.files?.[0];
+    let image = existingProduct?.image || "";
+
+    if (imageFile && imageFile.size > 0) {
+      image = await readImageAsDataURL(imageFile);
+    }
 
     const payload = {
       name: String(formData.get("name") || "").trim(),
       group_name: String(formData.get("group_name") || "").trim(),
-      price: formData.get("price"),
-      stock: formData.get("stock"),
+      price: Number(formData.get("price")),
+      stock: Number(formData.get("stock")),
       description: String(formData.get("description") || ""),
       category: apiCategory(formData.get("category")),
       is_bestseller: form.elements.is_bestseller.checked ? 1 : 0,
-      image: existingProduct?.image || (
-        typeof imageValue === "string" ? imageValue.trim() : ""
-      )
+      image
     };
+
+    if (!payload.name || !payload.group_name) {
+      throw new Error("Please enter the product name and group/artist.");
+    }
+
+    if (!Number.isFinite(payload.price) || payload.price < 0) {
+      throw new Error("Please enter a valid price.");
+    }
+
+    if (!Number.isInteger(payload.stock) || payload.stock < 0) {
+      throw new Error("Stock must be a whole number of zero or more.");
+    }
 
     const url = editingId === null
       ? "/api/firebase-products"
@@ -297,9 +330,7 @@ form.addEventListener("submit", async event => {
 
     const response = await fetch(url, {
       method: editingId === null ? "POST" : "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
@@ -335,7 +366,6 @@ productsList.addEventListener("click", async event => {
   if (!deleteButton) return;
 
   const id = deleteButton.dataset.delete;
-
   const product = products.find(
     item => String(item.id) === String(id)
   );
@@ -363,7 +393,6 @@ productsList.addEventListener("click", async event => {
     }
 
     setStatus("Product deleted successfully ♡");
-
     await refreshProducts();
   } catch (error) {
     window.alert(`Couldn't delete product: ${error.message}`);
@@ -375,4 +404,4 @@ productSearch.addEventListener("input", renderProducts);
 categoryFilter.addEventListener("change", renderProducts);
 
 refreshProducts();
-
+```
