@@ -167,25 +167,48 @@ function editProduct(id) {
   document.getElementById("formPanel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
  
+```javascript
 form.addEventListener("submit", async event => {
   event.preventDefault();
   submitButton.disabled = true;
   cancelButton.disabled = true;
   setStatus(editingId === null ? "Adding product…" : "Saving changes…");
- 
+
   try {
     const formData = new FormData(form);
-    // Map the visible category to values accepted by the existing backend.
-    formData.set("category", apiCategory(form.elements.category.value));
- 
-    const url = editingId === null ? "/api/products" : `/api/products/${editingId}`;
+    const imageFile = formData.get("image");
+
+    if (imageFile instanceof File && imageFile.size > 0) {
+      throw new Error("Image uploads need a separate setup. For now, add products using an image URL.");
+    }
+
+    const payload = {
+      name: formData.get("name"),
+      group_name: formData.get("group_name"),
+      price: formData.get("price"),
+      stock: formData.get("stock"),
+      description: formData.get("description") || "",
+      category: apiCategory(formData.get("category")),
+      is_bestseller: formData.get("is_bestseller") ? 1 : 0,
+      image: ""
+    };
+
+    const url = editingId === null
+      ? "/api/firebase-products"
+      : `/api/firebase-products/${encodeURIComponent(editingId)}`;
+
     const response = await fetch(url, {
       method: editingId === null ? "POST" : "PUT",
-      body: formData
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     });
+
     await readResponse(response);
- 
-    const successMessage = editingId === null ? "Product added successfully ♡" : "Product updated successfully ♡";
+
+    const successMessage = editingId === null
+      ? "Product added successfully ♡"
+      : "Product updated successfully ♡";
+
     resetForm(false);
     setStatus(successMessage);
     await refreshProducts();
@@ -196,8 +219,7 @@ form.addEventListener("submit", async event => {
     cancelButton.disabled = false;
   }
 });
- 
-cancelButton.addEventListener("click", () => resetForm());
+```
  
 productsList.addEventListener("click", async event => {
   const editButton = event.target.closest("[data-edit]");
