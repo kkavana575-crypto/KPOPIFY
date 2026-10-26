@@ -1,4 +1,3 @@
-
 const checkoutForm = document.getElementById("checkout-form");
 const checkoutItems = document.getElementById("checkout-items");
 const checkoutTotal = document.getElementById("checkout-total");
@@ -14,11 +13,15 @@ function getCart() {
     }
 }
 
+function sameProductId(firstId, secondId) {
+    return String(firstId) === String(secondId);
+}
+
 function renderCheckout() {
     const cart = getCart();
 
     if (!cart.length) {
-        checkoutItems.textContent = "Your cart is empty. Please add an album first.";
+        checkoutItems.textContent = "Your cart is empty. Please add a product first.";
         checkoutTotal.textContent = "₹0";
         placeOrderButton.disabled = true;
         return;
@@ -31,7 +34,14 @@ function renderCheckout() {
         const quantity = Number(item.quantity);
         const price = Number(item.price);
 
-        if (!Number.isFinite(quantity) || quantity < 1 || !Number.isFinite(price) || price < 0) {
+        if (
+            item.id === undefined ||
+            item.id === null ||
+            !Number.isSafeInteger(quantity) ||
+            quantity < 1 ||
+            !Number.isFinite(price) ||
+            price < 0
+        ) {
             return;
         }
 
@@ -42,7 +52,7 @@ function renderCheckout() {
         row.className = "checkout-summary-item";
 
         const name = document.createElement("span");
-        name.textContent = `${item.name || "Album"} × ${quantity}`;
+        name.textContent = `${item.name || "Product"} × ${quantity}`;
 
         const amount = document.createElement("strong");
         amount.textContent = `₹${subtotal.toLocaleString("en-IN")}`;
@@ -54,9 +64,14 @@ function renderCheckout() {
     checkoutTotal.textContent = `₹${total.toLocaleString("en-IN")}`;
 
     if (!checkoutItems.children.length) {
-        checkoutItems.textContent = "Your cart items could not be read. Return to the store and add them again.";
+        checkoutItems.textContent =
+            "Your cart items could not be read. Return to the store and add them again.";
+
         placeOrderButton.disabled = true;
+        return;
     }
+
+    placeOrderButton.disabled = false;
 }
 
 checkoutForm.addEventListener("submit", async event => {
@@ -66,21 +81,27 @@ checkoutForm.addEventListener("submit", async event => {
     const cart = getCart();
 
     if (!cart.length) {
-        checkoutMessage.textContent = "Your cart is empty. Please return to the store.";
+        checkoutMessage.textContent =
+            "Your cart is empty. Please return to the store.";
         return;
     }
 
     const formData = new FormData(checkoutForm);
     const customer = Object.fromEntries(formData.entries());
 
+    // Firebase product IDs are strings, not necessarily numbers.
     const items = cart.map(item => ({
-        id: Number(item.id),
+        id: String(item.id ?? ""),
         quantity: Number(item.quantity)
     }));
 
-    if (items.some(item => !Number.isSafeInteger(item.id) || item.id <= 0 ||
-        !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
-        checkoutMessage.textContent = "Your cart contains invalid items. Please return to the store and add them again.";
+    if (items.some(item =>
+        !item.id ||
+        !Number.isSafeInteger(item.quantity) ||
+        item.quantity <= 0
+    )) {
+        checkoutMessage.textContent =
+            "Your cart contains invalid items. Please return to the store and add them again.";
         return;
     }
 
@@ -88,16 +109,24 @@ checkoutForm.addEventListener("submit", async event => {
     placeOrderButton.textContent = "Placing your order...";
 
     try {
+        // This endpoint must be updated on the server to process Firebase IDs.
         const response = await fetch("/api/orders", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ customer, items })
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                customer,
+                items
+            })
         });
 
         const result = await response.json();
 
         if (!response.ok || !result.success) {
-            throw new Error(result.message || "Could not place your order.");
+            throw new Error(
+                result.message || "Could not place your order."
+            );
         }
 
         localStorage.removeItem("kpopifyCart");
@@ -111,18 +140,27 @@ checkoutForm.addEventListener("submit", async event => {
                 <div class="order-number" id="success-order-number"></div>
                 <p id="success-order-total"></p>
                 <p>Keep your order number for future reference.</p>
-                <a class="continue-button" href="/index.html">Continue Shopping ♡</a>
+                <a class="continue-button" href="/index.html">
+                    Continue Shopping ♡
+                </a>
             </section>
         `;
 
-        document.getElementById("success-order-number").textContent = result.orderNumber;
-        document.getElementById("success-order-total").textContent =
-            `Order total: ₹${Number(result.total).toLocaleString("en-IN")}`;
+        document.getElementById("success-order-number").textContent =
+            result.orderNumber || result.orderId || "Confirmed";
 
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        document.getElementById("success-order-total").textContent =
+            `Order total: ₹${Number(result.total || 0).toLocaleString("en-IN")}`;
+
+        window.scrollTo({
+            top: 0,
+            behavior: "smooth"
+        });
 
     } catch (error) {
-        checkoutMessage.textContent = error.message || "Something went wrong. Please try again.";
+        checkoutMessage.textContent =
+            error.message || "Something went wrong. Please try again.";
+
         placeOrderButton.disabled = false;
         placeOrderButton.textContent = "Place Order ♡";
     }
