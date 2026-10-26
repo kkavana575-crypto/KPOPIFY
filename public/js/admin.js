@@ -1,4 +1,4 @@
-```javascript
+
 const form = document.getElementById("productForm");
 const statusBox = document.getElementById("status");
 const submitButton = document.getElementById("submitButton");
@@ -403,5 +403,4 @@ productsList.addEventListener("click", async event => {
 productSearch.addEventListener("input", renderProducts);
 categoryFilter.addEventListener("change", renderProducts);
 
-refreshProducts();
-```
+
