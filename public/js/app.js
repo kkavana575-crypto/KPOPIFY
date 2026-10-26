@@ -482,10 +482,12 @@ document.addEventListener("click", event => {
         return;
     }
 
-    if (event.target.closest("#checkoutButton")) {
-        alert("Checkout is not yet connected to Firebase products. Your cart is saved, but orders are not being submitted.");
-    }
+    
+if (event.target.closest("#checkoutButton")) {
+    window.location.href = "/checkout.html";
+}
 });
+
 
 // Cart drawer controls
 function openCart() {
