@@ -1,391 +1,143 @@
 
 const express = require("express");
+const { GoogleGenAI } = require("@google/genai");
 const firebaseDb = require("../database/firebase");
 
 const router = express.Router();
 
-// Store policies
-const STORE = {
-    cod: {
-        status: "unavailable",
-        details: "KPOPIFY currently accepts online payment only."
-    },
-    delivery: {
-        estimate: "",
-        shippingFee: ""
-    },
-    payments: {
-        details: "Please check the payment options displayed at checkout."
-    },
-    returns: {
-        policy: ""
-    }
-};
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-// Health check
-router.get("/test", (_req, res) => {
-    res.json({
-        success: true,
-        message: "KPOPIFY AI is ready! 💗"
-    });
-});
+const STORE_INFO = `
+You are KPOPIFY AI, a friendly, intelligent K-pop shopping assistant.
+Speak naturally, warmly, and helpfully. You may use occasional cute
+emojis and call customers "chingu".
 
-// Detect store-policy questions and greetings.
-function getIntent(message) {
-    const text = message.toLowerCase().trim();
+KPOPIFY is a K-pop shopping store. Help customers explore products,
+understand product details, compare prices, and find suitable merchandise.
 
-    if (/\b(cod|cash on delivery|pay on delivery)\b/.test(text)) {
-        return "cod";
-    }
+IMPORTANT RULES:
+- Answer ordinary questions naturally. Do not require customers to use
+  particular keywords.
+- Use the supplied Firebase catalogue as the source of truth for products.
+- Never invent products, prices, stock levels, discounts, or policies.
+- If the catalogue does not contain a requested item, say so honestly.
+- For general questions such as "What can I find here?", explain the store
+  and mention the types of products actually present in the catalogue.
+- If a customer asks for recommendations, recommend relevant products
+  from the supplied catalogue.
+- If the customer asks about prices, use the supplied prices.
+- If a detail is missing, clearly say it has not been confirmed.
+- Do not claim an order was placed, a payment was processed, or a delivery
+  was tracked.
+- The current order-tracking page may be a demo, so never invent live
+  courier information.
+- Be conversational, not robotic. Understand spelling mistakes and
+  informal messages.
+`;
 
-    if (/\b(delivery|deliver|shipping|shipping fee|shipping charges|dispatch|arrival)\b/.test(text)) {
-        return "delivery";
-    }
+function getAI() {
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    if (/\b(payment|payments|pay|upi|credit card|debit card)\b/.test(text)) {
-        return "payments";
+    if (!apiKey) {
+        throw new Error("GEMINI_API_KEY is missing from the server environment.");
     }
 
-    if (/\b(track|tracking|order status|where is my order|my parcel|my package)\b/.test(text)) {
-        return "tracking";
-    }
-
-    if (/\b(return|returns|refund|refunds|exchange|damaged order)\b/.test(text)) {
-        return "returns";
-    }
-
-    if (/^(hi|hii+|hello|hey|heyy+|annyeong|안녕|yo)[!.💗🎀\s]*$/i.test(text)) {
-        return "greeting";
-    }
-
-    return "shopping";
+    return new GoogleGenAI({ apiKey });
 }
 
-// Read products from Firebase.
-async function getFirebaseProducts() {
+async function getProducts() {
     const snapshot = await firebaseDb.ref("products").once("value");
     const data = snapshot.val() || {};
 
     return Object.entries(data)
-        .filter(([, p]) => p && typeof p === "object")
-        .map(([key, p]) => ({
-            ...p,
-            id: String(p.id || key),
-            name: p.name || p.product_name || p.title || "Unnamed product",
-            image: p.image || p.image_url || p.imageUrl || p.thumbnail || "",
-            price: p.price ?? p.selling_price ?? null
+        .filter(([, product]) => product && typeof product === "object")
+        .map(([key, product]) => ({
+            id: String(product.id || key),
+            name:
+                product.name ||
+                product.product_name ||
+                product.title ||
+                "Unnamed product",
+            category: product.category || "",
+            group: product.group_name || product.group || "",
+            description: product.description || "",
+            version: product.version || "",
+            price: product.price ?? product.selling_price ?? null,
+            stock: product.stock ?? product.quantity ?? null,
+            image:
+                product.image ||
+                product.image_url ||
+                product.imageUrl ||
+                product.thumbnail ||
+                ""
         }));
 }
 
-// Normalize common abbreviations and spelling variations.
-function normalizeQuery(message) {
-    return String(message || "")
-        .toLowerCase()
-        .replace(/&/g, " and ")
+function getRelevantProducts(message, products) {
+    const text = String(message || "").toLowerCase();
+
+    const asksForAll =
+        /\b(what can i find|what can i buy|what do you sell|what do you have|show me everything|show all|all products|browse|catalogue|catalog|your products|your store|your shop)\b/i.test(text);
+
+    // For broad browsing, give the AI the complete catalogue.
+    if (asksForAll) {
+        return products.slice(0, 30);
+    }
+
+    const words = text
         .replace(/[^a-z0-9\s-]/g, " ")
-        .replace(/\bfigs?\b/g, " figure ")
-        .replace(/\bfigurines?\b/g, " figure ")
-        .replace(/\bvers?\b/g, " version ")
-        .replace(/\bpart[\s-]*2\b/g, " part2 ")
-        .replace(/\bno[\s-]*label\b/g, " nolabel ")
-        .replace(/\s+/g, " ")
-        .trim();
-}
+        .split(/\s+/)
+        .filter(word =>
+            word.length > 2 &&
+            ![
+                "the", "and", "for", "you", "your", "can", "could",
+                "what", "which", "find", "here", "buy", "show", "please",
+                "want", "need", "with", "about", "cheapest", "price"
+            ].includes(word)
+        );
 
-// Understand general browsing requests and specific searches.
-function getSearchOptions(message) {
-    const text = normalizeQuery(message);
+    const ranked = products.map(product => {
+        const searchable = [
+            product.name,
+            product.category,
+            product.group,
+            product.description,
+            product.version
+        ].join(" ").toLowerCase();
 
-    const wantsTxt =
-        /\btxt\b/.test(text) ||
-        text.includes("tomorrow x together") ||
-        text.includes("tubatu");
-
-    const wantsPpulbatu =
-        /\bppulbatu\b/.test(text) ||
-        /\btubatu\b/.test(text);
-
-    const wantsAlbum = /\balbums?\b/.test(text);
-    const wantsFigure = /\bfigure\b/.test(text);
-    const wantsNoLabel = /\bnolabel\b/.test(text);
-    const wantsPart2 = /\bpart2\b/.test(text);
-
-    // Recognize broad requests to browse the catalogue.
-    const wantsBrowse =
-        /\b(buy|shop|sell|selling|store|here|catalogue|catalog|products?|items?|merch|merchandise|available|availability|options|collection|collections|everything|all|browse|list|display|show|have|stock)\b/.test(text) ||
-        /\bwhat\b.*\b(can i|get|do you|is there)\b/.test(text) ||
-        /\b(which|what)\b.*\b(available|have|sell|buy)\b/.test(text) ||
-        /\bdo you have\b/.test(text);
-
-    return {
-        text,
-        wantsTxt,
-        wantsPpulbatu,
-        wantsAlbum,
-        wantsFigure,
-        wantsNoLabel,
-        wantsPart2,
-        wantsBrowse
-    };
-}
-
-// Search real products from Firebase.
-async function searchProducts(message) {
-    const products = await getFirebaseProducts();
-
-    if (!products.length) {
-        return [];
-    }
-
-    const options = getSearchOptions(message);
-    const query = options.text;
-
-    // Broad catalogue requests return actual products directly.
-    // Do this BEFORE keyword scoring so unrelated words such as
-    // "buy" or "here" cannot accidentally affect product ranking.
-    const isGeneralBrowse =
-        options.wantsBrowse &&
-        !options.wantsFigure &&
-        !options.wantsNoLabel &&
-        !options.wantsPart2 &&
-        !options.wantsAlbum &&
-        !options.wantsTxt &&
-        !options.wantsPpulbatu;
-
-    if (isGeneralBrowse) {
-        return products.slice(0, 6);
-    }
-
-    const stopWords = new Set([
-        "i", "a", "an", "the", "is", "are", "do", "you",
-        "have", "want", "me", "my", "your", "please", "can",
-        "show", "give", "get", "which", "what", "some", "any",
-        "product", "products", "available", "find", "for",
-        "of", "and", "to", "in", "on", "with", "it", "buy",
-        "shop", "here", "sell", "selling", "store", "all",
-        "everything", "options", "list", "display", "browse"
-    ]);
-
-    const words = [...new Set(query.split(" ").filter(
-        word => word.length > 1 && !stopWords.has(word)
-    ))];
-
-    const scored = products.map(product => {
-        const name = String(product.name || "").toLowerCase();
-        const group = String(product.group_name || product.group || "").toLowerCase();
-        const category = String(product.category || "").toLowerCase();
-        const description = String(product.description || "").toLowerCase();
-        const version = String(product.version || "").toLowerCase();
-        const artist = String(product.artist || "").toLowerCase();
-
-        const rawFields =
-            `${name} ${group} ${category} ${description} ${version} ${artist}`;
-
-        const fields = normalizeQuery(rawFields);
         let score = 0;
 
-        if (query && fields.includes(query)) {
-            score += 20;
-        }
-
         for (const word of words) {
-            if (fields.split(" ").includes(word)) {
-                score += word.length >= 5 ? 5 : 3;
+            if (searchable.includes(word)) {
+                score += word.length >= 5 ? 3 : 1;
             }
-        }
-
-        if (
-            options.wantsTxt &&
-            /txt|tomorrow x together|tubatu/.test(
-                `${group} ${category} ${artist} ${name}`
-            )
-        ) {
-            score += 15;
-        }
-
-        if (
-            options.wantsPpulbatu &&
-            /ppulbatu|tubatu/.test(
-                `${name} ${group} ${category} ${description}`
-            )
-        ) {
-            score += 15;
-        }
-
-        if (
-            options.wantsAlbum &&
-            /album/.test(
-                `${name} ${category} ${description} ${version}`
-            )
-        ) {
-            score += 12;
-        }
-
-        if (
-            options.wantsFigure &&
-            /figure|figurine/.test(
-                `${name} ${category} ${description} ${version}`
-            )
-        ) {
-            score += 15;
-        }
-
-        if (options.wantsNoLabel && /no[\s-]*label/.test(rawFields)) {
-            score += 15;
-        }
-
-        if (options.wantsPart2 && /part[\s-]*2/.test(rawFields)) {
-            score += 12;
         }
 
         return { product, score };
     });
 
-    const matches = scored
+    const matches = ranked
         .filter(item => item.score > 0)
         .sort((a, b) => b.score - a.score)
+        .slice(0, 15)
         .map(item => item.product);
 
-    // Return unique products, with a maximum of six cards.
-    const unique = [];
-    const seen = new Set();
-
-    for (const product of matches) {
-        if (seen.has(product.id)) {
-            continue;
-        }
-
-        seen.add(product.id);
-        unique.push(product);
-
-        if (unique.length >= 6) {
-            break;
-        }
-    }
-
-    return unique;
+    // If keyword matching finds nothing, let Gemini answer using the
+    // full available catalogue instead of incorrectly claiming no match.
+    return matches.length ? matches : products.slice(0, 30);
 }
 
-// Build the reply from actual database results.
-function buildProductReply(products, message) {
-    if (!products.length) {
-        return (
-            "Aww, chingu! 💗 I couldn't find a matching product in our " +
-            "current database. Try another album name, group, or version!"
-        );
-    }
+router.get("/test", (_req, res) => {
+    res.json({
+        success: true,
+        message: "KPOPIFY AI is ready! 💗",
+        aiConfigured: Boolean(process.env.GEMINI_API_KEY)
+    });
+});
 
-    const options = getSearchOptions(message);
-
-    if (
-        options.wantsBrowse &&
-        !options.wantsFigure &&
-        !options.wantsNoLabel &&
-        !options.wantsPart2 &&
-        !options.wantsAlbum &&
-        !options.wantsTxt &&
-        !options.wantsPpulbatu
-    ) {
-        return (
-            "Omo, chingu! 💗 Welcome to KPOPIFY! 🎀 " +
-            "Here are some products available in our store. " +
-            "Check out the product cards below for their prices, pictures, " +
-            "and details. Which one catches your eye? 🛍️💜"
-        );
-    }
-
-    if (products.length === 1) {
-        const product = products[0];
-        const price = Number(product.price);
-
-        const validPrice =
-            product.price !== null &&
-            product.price !== "" &&
-            Number.isFinite(price);
-
-        const hasStock =
-            product.stock !== undefined &&
-            product.stock !== null &&
-            product.stock !== "";
-
-        const stock = Number(product.stock);
-
-        const priceText = validPrice
-            ? `It's priced at ₹${price.toLocaleString("en-IN", {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            })}.`
-            : "Its price hasn't been confirmed.";
-
-        const stockText = !hasStock
-            ? "Stock availability hasn't been confirmed."
-            : stock > 0
-                ? "It's currently in stock."
-                : "It's currently out of stock.";
-
-        return (
-            `Omo, chingu! 💗 I found ${product.name}! ` +
-            `${priceText} ${stockText} ` +
-            "Check out the product card below! 🛍️"
-        );
-    }
-
-    return (
-        `Omo, chingu! 💗 I found ${products.length} matching products! ` +
-        "Have a look at the product cards below and choose your favourite. 🛍️"
-    );
-}
-
-// Store-policy replies.
-function getPolicyReply(intent) {
-    if (intent === "cod") {
-        return (
-            "Aww, chingu! 💗 Cash on Delivery isn't available at KPOPIFY. " +
-            STORE.cod.details
-        );
-    }
-
-    if (intent === "delivery") {
-        const estimate = STORE.delivery.estimate
-            ? `Estimated delivery: ${STORE.delivery.estimate}.`
-            : "I don't have a confirmed delivery timeframe yet.";
-
-        const fee = STORE.delivery.shippingFee
-            ? ` Shipping fee: ${STORE.delivery.shippingFee}.`
-            : "";
-
-        return `Let's get your K-pop goodies home safely! 📦💗 ${estimate}${fee}`;
-    }
-
-    if (intent === "payments") {
-        return (
-            "Chingu! 💗 Please check the payment options displayed at " +
-            "checkout. I can't confirm that a particular payment method " +
-            "is currently connected."
-        );
-    }
-
-    if (intent === "tracking") {
-        return (
-            "Omo, chingu! 💗📦 Visit the Track My Order page from the " +
-            "store menu. The current tracking page is a demo and may not " +
-            "retrieve real courier information. 🎀"
-        );
-    }
-
-    if (intent === "returns") {
-        return STORE.returns.policy
-            ? `Here's our return policy, chingu! 💗 ${STORE.returns.policy}`
-            : "Aww, chingu! 💗 Our confirmed return and refund policy hasn't been added yet. Please contact the store before making a decision about your order.";
-    }
-
-    return null;
-}
-
-// Main chatbot endpoint.
 router.post("/", async (req, res) => {
     try {
-        const { message } = req.body || {};
+        const { message, history } = req.body || {};
 
         if (typeof message !== "string" || !message.trim()) {
             return res.status(400).json({
@@ -394,88 +146,89 @@ router.post("/", async (req, res) => {
             });
         }
 
-        const query = message.trim();
-        const normalized = normalizeQuery(query);
+        const products = await getProducts();
+        const relevantProducts = getRelevantProducts(message, products);
 
-        // Handle store-policy questions first.
-        const intent = getIntent(query);
-        const policyReply = getPolicyReply(intent);
+        const catalogue = relevantProducts.map(product => ({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            group: product.group,
+            description: product.description,
+            version: product.version,
+            price: product.price,
+            stock: product.stock
+        }));
 
-        if (policyReply) {
-            return res.json({
-                success: true,
-                reply: policyReply,
-                products: []
-            });
-        }
+        const conversationHistory = Array.isArray(history)
+            ? history
+                .filter(item =>
+                    item &&
+                    ["user", "model"].includes(item.role) &&
+                    typeof item.text === "string"
+                )
+                .slice(-10)
+                .map(item => ({
+                    role: item.role,
+                    parts: [{ text: item.text.slice(0, 2000) }]
+                }))
+            : [];
 
-        // Greeting response.
-        if (intent === "greeting") {
-            return res.json({
-                success: true,
-                reply:
-                    "Annyeong, chingu! 💗 I'm your KPOPIFY shopping bestie! " +
-                    "Ask me about TXT albums, No Label versions, figure versions, " +
-                    "or PPULBATU merch. You can also ask to see our products! 🎀",
-                products: []
-            });
-        }
+        const ai = getAI();
 
-        // Explicitly recognize general catalogue requests.
-        // This bypasses keyword scoring for broad shopping questions.
-        const browseRequest =
-            /\b(buy|shop|shopping|store|here|catalogue|catalog|products?|items?|merch|merchandise|available|availability|options|collection|collections|everything|all|browse|list|display|show|have|stock)\b/i.test(normalized) ||
-            /\b(what|which)\b.*\b(can i|get|do you|is there|available|have|sell|buy)\b/i.test(normalized) ||
-            /\bdo you have\b/i.test(normalized);
-
-        let products;
-
-        if (browseRequest) {
-            // Read real products directly from Firebase.
-            products = await getFirebaseProducts();
-
-            // Only return products that actually exist in Firebase.
-            products = products.slice(0, 6);
-
-            if (products.length === 0) {
-                return res.json({
-                    success: true,
-                    reply:
-                        "Aww, chingu! 💗 I couldn't find any products in our " +
-                        "catalogue right now. Please check back soon!",
-                    products: []
-                });
+        const response = await ai.models.generateContent({
+            model: MODEL,
+            contents: [
+                ...conversationHistory,
+                {
+                    role: "user",
+                    parts: [{
+                        text:
+                            "CURRENT STORE CATALOGUE (authoritative product data):\n" +
+                            JSON.stringify(catalogue) +
+                            "\n\nCUSTOMER MESSAGE:\n" +
+                            message.trim()
+                    }]
+                }
+            ],
+            config: {
+                systemInstruction: STORE_INFO,
+                temperature: 0.7,
+                maxOutputTokens: 500
             }
+        });
 
-            return res.json({
-                success: true,
-                reply:
-                    "Omo, chingu! 💗 Welcome to KPOPIFY! 🎀 " +
-                    "Here are the products currently available in our store. " +
-                    "Check out the product cards below for prices, pictures, " +
-                    "and details. Which one catches your eye? 🛍️💜",
-                products
-            });
+        const reply = response.text?.trim();
+
+        if (!reply) {
+            throw new Error("Gemini returned an empty response.");
         }
 
-        // Specific product searches use the existing search function.
-        products = await searchProducts(query);
+        // Return product cards separately so the frontend can display them.
+        // Broad browsing gets the actual catalogue; specific questions get
+        // the relevant products identified above.
+        const normalizedMessage = message.toLowerCase();
 
-        const reply = buildProductReply(products, query);
+        const isBroadBrowse =
+            /\b(what can i find|what can i buy|what do you sell|what do you have|show me everything|show all|all products|browse|catalogue|catalog|your products|your store|your shop)\b/i.test(normalizedMessage);
+
+        const shouldShowCards =
+            isBroadBrowse ||
+            relevantProducts.length > 0;
 
         return res.json({
             success: true,
             reply,
-            products
+            products: shouldShowCards ? relevantProducts.slice(0, 6) : []
         });
 
     } catch (error) {
-        console.error("KPOPIFY chatbot error:", error);
+        console.error("KPOPIFY AI error:", error.message);
 
         return res.status(500).json({
             success: false,
             message:
-                "Oops, my shopping brain had a tiny hiccup! 💗 Please try again."
+                "Aww, chingu! 💗 My AI assistant is temporarily unavailable. Please try again shortly."
         });
     }
 });
