@@ -401,4 +401,4 @@ productsList.addEventListener("click", async event => {
  
 productSearch.addEventListener("input", renderProducts); 
 categoryFilter.addEventListener("change", renderProducts); 
- 
+ refreshProducts();
