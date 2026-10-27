@@ -264,15 +264,16 @@ async function searchProducts(message) {
     // If the customer asks what is available, show actual products
     // instead of asking them to repeat their question.
     if (
-        matches.length === 0 &&
-        options.wantsBrowse &&
-        !options.wantsFigure &&
-        !options.wantsNoLabel &&
-        !options.wantsPart2 &&
-        !options.wantsAlbum
-    ) {
-        matches = products;
-    }
+    options.wantsBrowse &&
+    !options.wantsFigure &&
+    !options.wantsNoLabel &&
+    !options.wantsPart2 &&
+    !options.wantsAlbum &&
+    !options.wantsTxt &&
+    !options.wantsPpulbatu
+) {
+    matches = products;
+}
 
     // Avoid returning duplicate products.
     const unique = [];
