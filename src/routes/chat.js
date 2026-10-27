@@ -1,15 +1,10 @@
 
 const express = require("express");
-const { GoogleGenAI } = require("@google/genai");
 const firebaseDb = require("../database/firebase");
 
 const router = express.Router();
 
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
-
-const MODEL = "gemini-3.5-flash-lite";
-
+// Store policies
 const STORE = {
     cod: {
         status: "unavailable",
@@ -17,20 +12,13 @@ const STORE = {
     },
     delivery: {
         estimate: "",
-        shippingFee: "",
-        details: ""
+        shippingFee: ""
     },
     payments: {
-        details:
-            "Customers should check the payment options displayed at checkout."
+        details: "Please check the payment options displayed at checkout."
     },
     returns: {
         policy: ""
-    },
-    tracking: {
-        enabled: true,
-        details:
-            "The current order-tracking page is for demonstration purposes."
     }
 };
 
@@ -50,115 +38,98 @@ function getIntent(message) {
         return "cod";
     }
 
-    if (
-        /\b(delivery|deliver|shipping|shipping fee|shipping charges|dispatch|arrival)\b/.test(text)
-    ) {
+    if (/\b(delivery|deliver|shipping|shipping fee|shipping charges|dispatch|arrival)\b/.test(text)) {
         return "delivery";
     }
 
-    if (
-        /\b(payment|payments|pay|upi|credit card|debit card)\b/.test(text)
-    ) {
+    if (/\b(payment|payments|pay|upi|credit card|debit card)\b/.test(text)) {
         return "payments";
     }
 
-    if (
-        /\b(track|tracking|order status|where is my order|my parcel|my package)\b/.test(text)
-    ) {
+    if (/\b(track|tracking|order status|where is my order|my parcel|my package)\b/.test(text)) {
         return "tracking";
     }
 
-    if (
-        /\b(return|returns|refund|refunds|exchange|damaged order)\b/.test(text)
-    ) {
+    if (/\b(return|returns|refund|refunds|exchange|damaged order)\b/.test(text)) {
         return "returns";
     }
 
-    if (
-        /^(hi|hii+|hello|hey|heyy+|annyeong|안녕|yo)[!.💗🎀\s]*$/i.test(text)
-    ) {
+    if (/^(hi|hii+|hello|hey|heyy+|annyeong|안녕|yo)[!.💗🎀\s]*$/i.test(text)) {
         return "greeting";
     }
 
     return "shopping";
 }
 
-// Read products directly from Firebase.
+// Read products from Firebase.
 async function getFirebaseProducts() {
     const snapshot = await firebaseDb.ref("products").once("value");
     const data = snapshot.val() || {};
 
     return Object.entries(data)
-        .filter(([, product]) => product && typeof product === "object")
-        .map(([key, product]) => ({
-            ...product,
-            id: String(product.id || key),
-
-            // Support common image field names.
-            image:
-                product.image ||
-                product.image_url ||
-                product.imageUrl ||
-                product.thumbnail ||
-                "",
-
-            // Support common product-name field names.
-            name:
-                product.name ||
-                product.product_name ||
-                product.title ||
-                "Unnamed product",
-
-            // Keep the original price value from Firebase.
-            price: product.price ?? product.selling_price ?? null
+        .filter(([, p]) => p && typeof p === "object")
+        .map(([key, p]) => ({
+            ...p,
+            id: String(p.id || key),
+            name: p.name || p.product_name || p.title || "Unnamed product",
+            image: p.image || p.image_url || p.imageUrl || p.thumbnail || "",
+            price: p.price ?? p.selling_price ?? null
         }));
 }
 
-// Normalize abbreviations and common spelling variations.
+// Normalize common abbreviations and spelling variations.
 function normalizeQuery(message) {
     return String(message || "")
         .toLowerCase()
         .replace(/&/g, " and ")
         .replace(/[^a-z0-9\s-]/g, " ")
         .replace(/\bfigs?\b/g, " figure ")
-        .replace(/\bfigurine(s)?\b/g, " figure ")
-        .replace(/\bver(s)?\b/g, " version ")
+        .replace(/\bfigurines?\b/g, " figure ")
+        .replace(/\bvers?\b/g, " version ")
         .replace(/\bpart[\s-]*2\b/g, " part2 ")
         .replace(/\bno[\s-]*label\b/g, " nolabel ")
         .replace(/\s+/g, " ")
         .trim();
 }
 
-// Identify what the customer is looking for.
+// Understand general browsing requests and specific searches.
 function getSearchOptions(message) {
     const text = normalizeQuery(message);
 
+    const wantsTxt =
+        /\btxt\b/.test(text) ||
+        text.includes("tomorrow x together") ||
+        text.includes("tubatu");
+
+    const wantsPpulbatu =
+        /\bppulbatu\b/.test(text) ||
+        /\btubatu\b/.test(text);
+
+    const wantsAlbum = /\balbums?\b/.test(text);
+    const wantsFigure = /\bfigure\b/.test(text);
+    const wantsNoLabel = /\bnolabel\b/.test(text);
+    const wantsPart2 = /\bpart2\b/.test(text);
+
+    // Recognize broad requests to browse the catalogue.
+    const wantsBrowse =
+        /\b(buy|shop|sell|selling|store|here|catalogue|catalog|products?|items?|merch|merchandise|available|availability|options|collection|collections|everything|all|browse|list|display|show|have|stock)\b/.test(text) ||
+        /\bwhat\b.*\b(can i|get|do you|is there)\b/.test(text) ||
+        /\b(which|what)\b.*\b(available|have|sell|buy)\b/.test(text) ||
+        /\bdo you have\b/.test(text);
+
     return {
         text,
-        wantsTxt:
-            /\btxt\b/.test(text) ||
-            text.includes("tomorrow x together") ||
-            text.includes("tubatu"),
-
-        wantsPpulbatu:
-            /\bppulbatu\b/.test(text) ||
-            /\btubatu\b/.test(text),
-
-        wantsAlbum: /\balbums?\b/.test(text),
-
-        wantsFigure: /\bfigure\b/.test(text),
-
-        wantsNoLabel: /\bnolabel\b/.test(text),
-
-        wantsPart2: /\bpart2\b/.test(text),
-
-        wantsBrowse:
-            /\b(show|list|display|browse|available|have|stock|products|options)\b/.test(text) ||
-            /\bwhich\b.*\b(have|available|stock)\b/.test(text)
+        wantsTxt,
+        wantsPpulbatu,
+        wantsAlbum,
+        wantsFigure,
+        wantsNoLabel,
+        wantsPart2,
+        wantsBrowse
     };
 }
 
-// Match products against their actual Firebase fields.
+// Search real products from Firebase.
 async function searchProducts(message) {
     const products = await getFirebaseProducts();
 
@@ -169,6 +140,36 @@ async function searchProducts(message) {
     const options = getSearchOptions(message);
     const query = options.text;
 
+    // Broad catalogue requests return actual products directly.
+    // Do this BEFORE keyword scoring so unrelated words such as
+    // "buy" or "here" cannot accidentally affect product ranking.
+    const isGeneralBrowse =
+        options.wantsBrowse &&
+        !options.wantsFigure &&
+        !options.wantsNoLabel &&
+        !options.wantsPart2 &&
+        !options.wantsAlbum &&
+        !options.wantsTxt &&
+        !options.wantsPpulbatu;
+
+    if (isGeneralBrowse) {
+        return products.slice(0, 6);
+    }
+
+    const stopWords = new Set([
+        "i", "a", "an", "the", "is", "are", "do", "you",
+        "have", "want", "me", "my", "your", "please", "can",
+        "show", "give", "get", "which", "what", "some", "any",
+        "product", "products", "available", "find", "for",
+        "of", "and", "to", "in", "on", "with", "it", "buy",
+        "shop", "here", "sell", "selling", "store", "all",
+        "everything", "options", "list", "display", "browse"
+    ]);
+
+    const words = [...new Set(query.split(" ").filter(
+        word => word.length > 1 && !stopWords.has(word)
+    ))];
+
     const scored = products.map(product => {
         const name = String(product.name || "").toLowerCase();
         const group = String(product.group_name || product.group || "").toLowerCase();
@@ -177,113 +178,85 @@ async function searchProducts(message) {
         const version = String(product.version || "").toLowerCase();
         const artist = String(product.artist || "").toLowerCase();
 
-        const allFields = normalizeQuery(
-            `${name} ${group} ${category} ${description} ${version} ${artist}`
-        );
+        const rawFields =
+            `${name} ${group} ${category} ${description} ${version} ${artist}`;
 
+        const fields = normalizeQuery(rawFields);
         let score = 0;
 
-        // Exact phrase matches receive the highest score.
-        if (query && allFields.includes(query)) {
-            score += 15;
+        if (query && fields.includes(query)) {
+            score += 20;
         }
-
-        if (options.wantsTxt && /txt|tomorrow x together|tubatu/.test(
-            `${group} ${category} ${artist}`
-        )) {
-            score += 12;
-        }
-
-        if (options.wantsPpulbatu && /ppulbatu|tubatu/.test(
-            `${name} ${group} ${category} ${description}`
-        )) {
-            score += 12;
-        }
-
-        if (options.wantsAlbum && /album|albums/.test(
-            `${name} ${category} ${description} ${version}`
-        )) {
-            score += 10;
-        }
-
-        if (options.wantsFigure && /figure|figurine/.test(
-            `${name} ${category} ${description} ${version}`
-        )) {
-            score += 12;
-        }
-
-        if (options.wantsNoLabel && /nolabel/.test(allFields)) {
-            score += 15;
-        }
-
-        if (options.wantsPart2 && /part2/.test(allFields)) {
-            score += 10;
-        }
-
-        // Match meaningful words, ignoring common filler words.
-        const stopWords = new Set([
-            "i", "a", "an", "the", "is", "are", "do", "you",
-            "have", "want", "me", "my", "your", "please", "can",
-            "show", "give", "get", "which", "what", "some", "any",
-            "product", "products", "available", "find", "for",
-            "of", "and", "to", "in", "on", "with", "it"
-        ]);
-
-        const words = [...new Set(query.split(" "))];
 
         for (const word of words) {
-            if (word.length < 2 || stopWords.has(word)) {
-                continue;
+            if (fields.split(" ").includes(word)) {
+                score += word.length >= 5 ? 5 : 3;
             }
+        }
 
-            if (allFields.split(" ").includes(word)) {
-                score += word.length >= 5 ? 4 : 2;
-            }
+        if (
+            options.wantsTxt &&
+            /txt|tomorrow x together|tubatu/.test(
+                `${group} ${category} ${artist} ${name}`
+            )
+        ) {
+            score += 15;
+        }
+
+        if (
+            options.wantsPpulbatu &&
+            /ppulbatu|tubatu/.test(
+                `${name} ${group} ${category} ${description}`
+            )
+        ) {
+            score += 15;
+        }
+
+        if (
+            options.wantsAlbum &&
+            /album/.test(
+                `${name} ${category} ${description} ${version}`
+            )
+        ) {
+            score += 12;
+        }
+
+        if (
+            options.wantsFigure &&
+            /figure|figurine/.test(
+                `${name} ${category} ${description} ${version}`
+            )
+        ) {
+            score += 15;
+        }
+
+        if (options.wantsNoLabel && /no[\s-]*label/.test(rawFields)) {
+            score += 15;
+        }
+
+        if (options.wantsPart2 && /part[\s-]*2/.test(rawFields)) {
+            score += 12;
         }
 
         return { product, score };
     });
 
-    // Keep the most relevant products first.
-    let matches = scored
+    const matches = scored
         .filter(item => item.score > 0)
         .sort((a, b) => b.score - a.score)
         .map(item => item.product);
 
-    // A generic "show me albums" request should also check
-    // common album categories and product version fields.
-    if (options.wantsAlbum && matches.length === 0) {
-        matches = products.filter(product =>
-            /album/i.test(
-                `${product.name || ""} ${product.category || ""} ` +
-                `${product.description || ""} ${product.version || ""}`
-            )
-        );
-    }
-
-    // If the customer asks what is available, show actual products
-    // instead of asking them to repeat their question.
-    if (
-    options.wantsBrowse &&
-    !options.wantsFigure &&
-    !options.wantsNoLabel &&
-    !options.wantsPart2 &&
-    !options.wantsAlbum &&
-    !options.wantsTxt &&
-    !options.wantsPpulbatu
-) {
-    matches = products;
-}
-
-    // Avoid returning duplicate products.
+    // Return unique products, with a maximum of six cards.
     const unique = [];
     const seen = new Set();
 
     for (const product of matches) {
-        if (!seen.has(product.id)) {
-            seen.add(product.id);
-            unique.push(product);
+        if (seen.has(product.id)) {
+            continue;
         }
+
+        seen.add(product.id);
+        unique.push(product);
 
         if (unique.length >= 6) {
             break;
@@ -293,8 +266,8 @@ async function searchProducts(message) {
     return unique;
 }
 
-// Build a reply using actual database information.
-function buildProductReply(products) {
+// Build the reply from actual database results.
+function buildProductReply(products, message) {
     if (!products.length) {
         return (
             "Aww, chingu! 💗 I couldn't find a matching product in our " +
@@ -302,24 +275,40 @@ function buildProductReply(products) {
         );
     }
 
+    const options = getSearchOptions(message);
+
+    if (
+        options.wantsBrowse &&
+        !options.wantsFigure &&
+        !options.wantsNoLabel &&
+        !options.wantsPart2 &&
+        !options.wantsAlbum &&
+        !options.wantsTxt &&
+        !options.wantsPpulbatu
+    ) {
+        return (
+            "Omo, chingu! 💗 Welcome to KPOPIFY! 🎀 " +
+            "Here are some products available in our store. " +
+            "Check out the product cards below for their prices, pictures, " +
+            "and details. Which one catches your eye? 🛍️💜"
+        );
+    }
+
     if (products.length === 1) {
         const product = products[0];
         const price = Number(product.price);
-        const validPrice = product.price !== null &&
+
+        const validPrice =
+            product.price !== null &&
             product.price !== "" &&
             Number.isFinite(price);
 
-        const stock = Number(product.stock);
-        const hasStockValue =
+        const hasStock =
             product.stock !== undefined &&
             product.stock !== null &&
             product.stock !== "";
 
-        const stockText = hasStockValue
-            ? stock > 0
-                ? "It's currently in stock"
-                : "It's currently out of stock"
-            : "Stock availability hasn't been confirmed";
+        const stock = Number(product.stock);
 
         const priceText = validPrice
             ? `It's priced at ₹${price.toLocaleString("en-IN", {
@@ -328,22 +317,31 @@ function buildProductReply(products) {
             })}.`
             : "Its price hasn't been confirmed.";
 
-        return `Omo, chingu! 💗 I found ${product.name}! ${priceText} ${stockText}. Check out the product card below for details! 🛍️`;
+        const stockText = !hasStock
+            ? "Stock availability hasn't been confirmed."
+            : stock > 0
+                ? "It's currently in stock."
+                : "It's currently out of stock.";
+
+        return (
+            `Omo, chingu! 💗 I found ${product.name}! ` +
+            `${priceText} ${stockText} ` +
+            "Check out the product card below! 🛍️"
+        );
     }
 
     return (
-        `Omo, chingu! 💗 I found ${products.length} matching products ` +
-        "in our store! Have a look at the product cards below and choose " +
-        "your favourite. 🛍️"
+        `Omo, chingu! 💗 I found ${products.length} matching products! ` +
+        "Have a look at the product cards below and choose your favourite. 🛍️"
     );
 }
 
-// Reply directly to store-policy questions.
+// Store-policy replies.
 function getPolicyReply(intent) {
     if (intent === "cod") {
         return (
-            "Aww, chingu! 💗 Cash on Delivery isn't available at " +
-            "KPOPIFY right now. " + STORE.cod.details
+            "Aww, chingu! 💗 Cash on Delivery isn't available at KPOPIFY. " +
+            STORE.cod.details
         );
     }
 
@@ -370,8 +368,8 @@ function getPolicyReply(intent) {
     if (intent === "tracking") {
         return (
             "Omo, chingu! 💗📦 Visit the Track My Order page from the " +
-            "store menu. Please remember that the current tracking page " +
-            "is a demo and may not retrieve real courier information. 🎀"
+            "store menu. The current tracking page is a demo and may not " +
+            "retrieve real courier information. 🎀"
         );
     }
 
@@ -415,17 +413,13 @@ router.post("/", async (req, res) => {
                 reply:
                     "Annyeong, chingu! 💗 I'm your KPOPIFY shopping bestie! " +
                     "Ask me for TXT albums, No Label versions, figure versions, " +
-                    "or PPULBATU merch. I'll look for actual products in our store! 🎀",
+                    "or PPULBATU merch. You can also ask to see our products! 🎀",
                 products: []
             });
         }
 
-        // Search Firebase regardless of whether Gemini is available.
         const products = await searchProducts(query);
-
-        // Return factual product information directly from Firebase.
-        // Product cards are delivered separately in the products array.
-        const reply = buildProductReply(products);
+        const reply = buildProductReply(products, query);
 
         return res.json({
             success: true,
@@ -434,7 +428,7 @@ router.post("/", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("KPOPIFY chatbot error:", error.message);
+        console.error("KPOPIFY chatbot error:", error);
 
         return res.status(500).json({
             success: false,
