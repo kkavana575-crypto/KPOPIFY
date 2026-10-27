@@ -1,95 +1,404 @@
-
-// Compress product images before sending them to Firebase.
-// This helps prevent HTTP 413 request-too-large errors.
-function readImageAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    if (!file || !file.size) {
-      resolve("");
-      return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("Please select a valid image file."));
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onerror = () => {
-      reject(new Error("Could not read the selected image."));
-    };
-
-    reader.onload = () => {
-      const image = new Image();
-
-      image.onerror = () => {
-        reject(new Error("Could not process this image. Try another image."));
-      };
-
-      image.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-
-          // Resize large images while keeping their proportions.
-          const maxDimension = 600;
-          const scale = Math.min(
-            1,
-            maxDimension / Math.max(image.width, image.height)
-          );
-
-          canvas.width = Math.max(1, Math.round(image.width * scale));
-          canvas.height = Math.max(1, Math.round(image.height * scale));
-
-          const context = canvas.getContext("2d");
-
-          if (!context) {
-            reject(new Error("Your browser could not process this image."));
-            return;
-          }
-
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, canvas.width, canvas.height);
-
-          context.drawImage(
-            image,
-            0,
-            0,
-            canvas.width,
-            canvas.height
-          );
-
-          // Reduce image quality until the Base64 data is small.
-          let quality = 0.65;
-          let compressed = canvas.toDataURL("image/jpeg", quality);
-
-          while (
-            compressed.length > 65000 &&
-            quality > 0.20
-          ) {
-            quality -= 0.10;
-            compressed = canvas.toDataURL("image/jpeg", quality);
-          }
-
-          if (compressed.length > 65000) {
-            reject(
-              new Error(
-                "This image is still too large. Please choose a smaller image."
-              )
-            );
-            return;
-          }
-
-          resolve(compressed);
-        } catch (error) {
-          reject(
-            new Error("Image compression failed. Please try another image.")
-          );
-        }
-      };
-
-      image.src = String(reader.result);
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
+const form = document.getElementById("productForm"); 
+const statusBox = document.getElementById("status"); 
+const submitButton = document.getElementById("submitButton"); 
+const cancelButton = document.getElementById("cancelButton"); 
+const formTitle = document.getElementById("formTitle"); 
+const productsList = document.getElementById("productsList"); 
+const productSearch = document.getElementById("productSearch"); 
+const categoryFilter = document.getElementById("categoryFilter"); 
+const totalProducts = document.getElementById("totalProducts"); 
+const totalBestsellers = document.getElementById("totalBestsellers"); 
+const totalStock = document.getElementById("totalStock"); 
+const productCountBadge = document.getElementById("productCountBadge"); 
+ 
+let editingId = null; 
+let products = []; 
+ 
+function escapeHTML(value) { 
+  return String(value ?? "").replace(/[&<>"']/g, character => ({ 
+    "&": "&amp;", 
+    "<": "&lt;", 
+    ">": "&gt;", 
+    '"': "&quot;", 
+    "'": "&#39;" 
+  })[character]); 
+} 
+ 
+function canonicalCategory(value) { 
+  const category = String(value || "").trim().toLowerCase(); 
+ 
+  if (["albums", "txt"].includes(category)) return "Albums"; 
+  if (["ppulbatu", "tubatu"].includes(category)) return "PPULBATU"; 
+  if (["members", "member"].includes(category)) return "Members"; 
+ 
+  return "Uncategorized"; 
+} 
+ 
+function apiCategory(value) { 
+  const category = canonicalCategory(value); 
+ 
+  if (category === "Albums") return "TXT"; 
+  if (category === "PPULBATU") return "Tubatu"; 
+  if (category === "Members") return "Member"; 
+ 
+  return "TXT"; 
+} 
+ 
+function categoryLabel(value) { 
+  return canonicalCategory(value); 
+} 
+ 
+async function readResponse(response) { 
+  const text = await response.text(); 
+  let data; 
+ 
+  try { 
+    data = JSON.parse(text); 
+  } catch { 
+    throw new Error("The server returned an unexpected response."); 
+  } 
+ 
+  if (!response.ok || !data.success) { 
+    throw new Error(data.message || "The request failed."); 
+  } 
+ 
+  return data; 
+} 
+ 
+function updateStats() { 
+  totalProducts.textContent = 
+    products.length.toLocaleString("en-IN"); 
+ 
+  totalBestsellers.textContent = 
+    products.filter(item => Number(item.is_bestseller) === 1) 
+      .length.toLocaleString("en-IN"); 
+ 
+  totalStock.textContent = 
+    products.reduce( 
+      (sum, item) => sum + (Number(item.stock) || 0), 
+      0 
+    ).toLocaleString("en-IN"); 
+ 
+  productCountBadge.textContent = 
+    `${products.length} ${products.length === 1 ? "item" : "items"}`; 
+} 
+ 
+function renderProducts() { 
+  updateStats(); 
+ 
+  const search = productSearch.value.trim().toLowerCase(); 
+  const selectedCategory = categoryFilter.value; 
+ 
+  const filtered = products.filter(product => { 
+    const category = categoryLabel(product.category); 
+ 
+    const searchable = 
+      `${product.name || ""} ${product.group_name || ""} ` + 
+      `${product.description || ""} ${category}`.toLowerCase(); 
+ 
+    return searchable.includes(search) && 
+      (selectedCategory === "All" || category === selectedCategory); 
+  }); 
+ 
+  if (!filtered.length) { 
+    productsList.innerHTML = ` 
+      <div class="empty-state"> 
+        ${products.length 
+          ? "No products match your search or category." 
+          : "No products yet. Add your first product ♡"} 
+      </div>`; 
+    return; 
+  } 
+ 
+  productsList.innerHTML = filtered.map(product => { 
+    const id = String(product.id ?? ""); 
+    const category = categoryLabel(product.category); 
+    const image = String(product.image || "").trim(); 
+ 
+    const imageMarkup = image 
+      ? `<img class="product-image" 
+              src="${escapeHTML(image)}" 
+              alt="${escapeHTML(product.name || "Product")}" 
+              loading="lazy" 
+              onerror="this.style.display='none'">` 
+      : `<div class="product-image product-image-placeholder" 
+              aria-hidden="true">♡</div>`; 
+ 
+    return ` 
+      <article class="product-row"> 
+        ${imageMarkup} 
+ 
+        <div class="product-main"> 
+          <div class="product-title-line"> 
+            <h3 class="product-name"> 
+              ${escapeHTML(product.name || "Untitled product")} 
+            </h3> 
+ 
+            <span class="category-pill ${category === "PPULBATU" ? "ppulbatu" : ""}"> 
+              ${escapeHTML(category)} 
+            </span> 
+          </div> 
+ 
+          <p class="product-meta"> 
+            ${escapeHTML(product.group_name || "No group / artist")}<br> 
+            <strong>₹${(Number(product.price) || 0).toLocaleString("en-IN")}</strong> 
+            &nbsp;·&nbsp; Stock: ${Number(product.stock) || 0} 
+            ${Number(product.is_bestseller) === 1 
+              ? '<br><span class="bestseller-tag">♡ Bestseller</span>' 
+              : ""} 
+          </p> 
+ 
+          <div class="product-actions"> 
+            <button type="button" 
+                    class="action-button edit-button" 
+                    data-edit="${escapeHTML(id)}">Edit</button> 
+ 
+            <button type="button" 
+                    class="action-button delete-button" 
+                    data-delete="${escapeHTML(id)}">Delete</button> 
+          </div> 
+        </div> 
+      </article>`; 
+  }).join(""); 
+} 
+ 
+async function refreshProducts() { 
+  productsList.innerHTML = 
+    '<div class="empty-state">Loading your products…</div>'; 
+ 
+  try { 
+    const response = await fetch("/api/firebase-products"); 
+    const data = await readResponse(response); 
+ 
+    products = Array.isArray(data.products) ? data.products : []; 
+    renderProducts(); 
+  } catch (error) { 
+    productsList.innerHTML = ` 
+      <div class="empty-state"> 
+        Couldn't load products.<br>${escapeHTML(error.message)} 
+      </div>`; 
+ 
+    totalProducts.textContent = "—"; 
+    totalBestsellers.textContent = "—"; 
+    totalStock.textContent = "—"; 
+  } 
+} 
+ 
+function setStatus(message, isError = false) { 
+  statusBox.textContent = message; 
+  statusBox.classList.toggle("error", isError); 
+} 
+ 
+function resetForm(clearStatus = true) { 
+  form.reset(); 
+ 
+  form.elements.stock.value = 1; 
+  form.elements.category.value = "TXT"; 
+ 
+  editingId = null; 
+ 
+  formTitle.textContent = "Add a product"; 
+  submitButton.textContent = "＋ Add product"; 
+  cancelButton.classList.add("hidden"); 
+ 
+  if (clearStatus) setStatus(""); 
+} 
+ 
+function editProduct(id) { 
+  const product = products.find( 
+    item => String(item.id) === String(id) 
+  ); 
+ 
+  if (!product) return; 
+ 
+  editingId = String(product.id); 
+ 
+  form.elements.name.value = product.name || ""; 
+  form.elements.group_name.value = product.group_name || ""; 
+  form.elements.price.value = product.price ?? ""; 
+  form.elements.stock.value = product.stock ?? 0; 
+  form.elements.description.value = product.description || ""; 
+  form.elements.is_bestseller.checked = 
+    Number(product.is_bestseller) === 1; 
+ 
+  const category = canonicalCategory(product.category); 
+ 
+  form.elements.category.value = 
+    category === "PPULBATU" 
+      ? "Tubatu" 
+      : category === "Members" 
+        ? "Member" 
+        : "TXT"; 
+ 
+  // Keep the current image unless a replacement is selected. 
+  form.elements.image.value = ""; 
+ 
+  formTitle.textContent = "Edit product"; 
+  submitButton.textContent = "Save changes ♡"; 
+  cancelButton.classList.remove("hidden"); 
+ 
+  setStatus( 
+    `Editing: ${product.name || "product"}. ` + 
+    "Leave the image unchanged to keep the current photo." 
+  ); 
+ 
+  document.getElementById("formPanel").scrollIntoView({ 
+    behavior: "smooth", 
+    block: "start" 
+  }); 
+} 
+ 
+// Read an uploaded image and convert it to a data URL for Firebase. 
+function readImageAsDataURL(file) { 
+  return new Promise((resolve, reject) => { 
+    if (!file || !file.size) { 
+      resolve(""); 
+      return; 
+    } 
+ 
+    if (!file.type.startsWith("image/")) { 
+      reject(new Error("Please select an image file.")); 
+      return; 
+    } 
+ 
+    // Keep image data small enough for practical database storage. 
+    if (file.size > 700 * 1024) { 
+      reject(new Error( 
+        "This image is too large. Please resize it to under 700 KB and try again." 
+      )); 
+      return; 
+    } 
+ 
+    const reader = new FileReader(); 
+ 
+    reader.onload = () => resolve(String(reader.result)); 
+    reader.onerror = () => reject(new Error("Could not read the selected image.")); 
+ 
+    reader.readAsDataURL(file); 
+  }); 
+} 
+ 
+form.addEventListener("submit", async event => { 
+  event.preventDefault(); 
+ 
+  submitButton.disabled = true; 
+  cancelButton.disabled = true; 
+ 
+  setStatus(editingId === null ? "Adding product…" : "Saving changes…"); 
+ 
+  try { 
+    const formData = new FormData(form); 
+ 
+    const existingProduct = editingId === null 
+      ? null 
+      : products.find(item => String(item.id) === editingId); 
+ 
+    const imageFile = form.elements.image?.files?.[0]; 
+    let image = existingProduct?.image || ""; 
+ 
+    if (imageFile && imageFile.size > 0) { 
+      image = await readImageAsDataURL(imageFile); 
+    } 
+ 
+    const payload = { 
+      name: String(formData.get("name") || "").trim(), 
+      group_name: String(formData.get("group_name") || "").trim(), 
+      price: Number(formData.get("price")), 
+      stock: Number(formData.get("stock")), 
+      description: String(formData.get("description") || ""), 
+      category: apiCategory(formData.get("category")), 
+      is_bestseller: form.elements.is_bestseller.checked ? 1 : 0, 
+      image 
+    }; 
+ 
+    if (!payload.name || !payload.group_name) { 
+      throw new Error("Please enter the product name and group/artist."); 
+    } 
+ 
+    if (!Number.isFinite(payload.price) || payload.price < 0) { 
+      throw new Error("Please enter a valid price."); 
+    } 
+ 
+    if (!Number.isInteger(payload.stock) || payload.stock < 0) { 
+      throw new Error("Stock must be a whole number of zero or more."); 
+    } 
+ 
+    const url = editingId === null 
+      ? "/api/firebase-products" 
+      : `/api/firebase-products/${encodeURIComponent(editingId)}`; 
+ 
+    const response = await fetch(url, { 
+      method: editingId === null ? "POST" : "PUT", 
+      headers: { "Content-Type": "application/json" }, 
+      body: JSON.stringify(payload) 
+    }); 
+ 
+    await readResponse(response); 
+ 
+    const successMessage = editingId === null 
+      ? "Product added successfully ♡" 
+      : "Product updated successfully ♡"; 
+ 
+    resetForm(false); 
+    setStatus(successMessage); 
+ 
+    await refreshProducts(); 
+  } catch (error) { 
+    setStatus(`Couldn't save product: ${error.message}`, true); 
+  } finally { 
+    submitButton.disabled = false; 
+    cancelButton.disabled = false; 
+  } 
+}); 
+ 
+cancelButton.addEventListener("click", () => resetForm()); 
+ 
+productsList.addEventListener("click", async event => { 
+  const editButton = event.target.closest("[data-edit]"); 
+  const deleteButton = event.target.closest("[data-delete]"); 
+ 
+  if (editButton) { 
+    editProduct(editButton.dataset.edit); 
+    return; 
+  } 
+ 
+  if (!deleteButton) return; 
+ 
+  const id = deleteButton.dataset.delete; 
+  const product = products.find( 
+    item => String(item.id) === String(id) 
+  ); 
+ 
+  if (!product) return; 
+ 
+  const confirmed = window.confirm( 
+    `Delete "${product.name}"? This removes it from your product database.` 
+  ); 
+ 
+  if (!confirmed) return; 
+ 
+  deleteButton.disabled = true; 
+ 
+  try { 
+    const response = await fetch( 
+      `/api/firebase-products/${encodeURIComponent(id)}`, 
+      { method: "DELETE" } 
+    ); 
+ 
+    await readResponse(response); 
+ 
+    if (String(editingId) === String(id)) { 
+      resetForm(); 
+    } 
+ 
+    setStatus("Product deleted successfully ♡"); 
+    await refreshProducts(); 
+  } catch (error) { 
+    window.alert(`Couldn't delete product: ${error.message}`); 
+    deleteButton.disabled = false; 
+  } 
+}); 
+ 
+productSearch.addEventListener("input", renderProducts); 
+categoryFilter.addEventListener("change", renderProducts); 
+ 
