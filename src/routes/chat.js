@@ -395,8 +395,10 @@ router.post("/", async (req, res) => {
         }
 
         const query = message.trim();
-        const intent = getIntent(query);
+        const normalized = normalizeQuery(query);
 
+        // Handle store-policy questions first.
+        const intent = getIntent(query);
         const policyReply = getPolicyReply(intent);
 
         if (policyReply) {
@@ -407,18 +409,58 @@ router.post("/", async (req, res) => {
             });
         }
 
+        // Greeting response.
         if (intent === "greeting") {
             return res.json({
                 success: true,
                 reply:
                     "Annyeong, chingu! 💗 I'm your KPOPIFY shopping bestie! " +
-                    "Ask me for TXT albums, No Label versions, figure versions, " +
+                    "Ask me about TXT albums, No Label versions, figure versions, " +
                     "or PPULBATU merch. You can also ask to see our products! 🎀",
                 products: []
             });
         }
 
-        const products = await searchProducts(query);
+        // Explicitly recognize general catalogue requests.
+        // This bypasses keyword scoring for broad shopping questions.
+        const browseRequest =
+            /\b(buy|shop|shopping|store|here|catalogue|catalog|products?|items?|merch|merchandise|available|availability|options|collection|collections|everything|all|browse|list|display|show|have|stock)\b/i.test(normalized) ||
+            /\b(what|which)\b.*\b(can i|get|do you|is there|available|have|sell|buy)\b/i.test(normalized) ||
+            /\bdo you have\b/i.test(normalized);
+
+        let products;
+
+        if (browseRequest) {
+            // Read real products directly from Firebase.
+            products = await getFirebaseProducts();
+
+            // Only return products that actually exist in Firebase.
+            products = products.slice(0, 6);
+
+            if (products.length === 0) {
+                return res.json({
+                    success: true,
+                    reply:
+                        "Aww, chingu! 💗 I couldn't find any products in our " +
+                        "catalogue right now. Please check back soon!",
+                    products: []
+                });
+            }
+
+            return res.json({
+                success: true,
+                reply:
+                    "Omo, chingu! 💗 Welcome to KPOPIFY! 🎀 " +
+                    "Here are the products currently available in our store. " +
+                    "Check out the product cards below for prices, pictures, " +
+                    "and details. Which one catches your eye? 🛍️💜",
+                products
+            });
+        }
+
+        // Specific product searches use the existing search function.
+        products = await searchProducts(query);
+
         const reply = buildProductReply(products, query);
 
         return res.json({
